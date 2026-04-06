@@ -1659,14 +1659,15 @@ class FireSimulation:
           weather it cannot change.
         - One-time events (structure lost, fire extinguished) fire once, not
           every subsequent step.
-        - Continuous signals (structure safe, area preserved) provide shaping
-          throughout the episode.
+        - Avoid overpaying passive waiting.  If a fire burns itself out slowly,
+          that should not beat faster containment by active suppression.
         """
         if self.state is None:
             return {}
 
         st = self.state
         rewards = {}
+        burning_positions = np.argwhere(st.cell_state == STATE_BURNING)
 
         # ── Structure damage ──
         # Burning: per-step urgency signal — act NOW to save the structure.
@@ -1680,31 +1681,42 @@ class FireSimulation:
                     rewards[f"structure_lost_{r}_{c}"] = -0.50 * s["priority"]
                     self._structures_lost_penalized.add((r, c))
 
-        # ── Structure safe ── continuous positive signal for each intact structure.
+        # ── Structure safe ── only reward intact structures that are still under
+        # some pressure from nearby fire. This keeps the signal focused on
+        # active asset protection rather than passive waiting.
+        threat_radius = 4
         for s in self.terrain.structures:
             r, c = s["row"], s["col"]
             if st.cell_state[r, c] in (STATE_STRUCTURE, STATE_SUPPRESSED):
-                rewards[f"structure_safe_{r}_{c}"] = 0.01 * s["priority"]
+                if burning_positions.size == 0:
+                    continue
+                nearest_fire_distance = int(
+                    np.min(np.abs(burning_positions[:, 0] - r) + np.abs(burning_positions[:, 1] - c))
+                )
+                if nearest_fire_distance <= threat_radius:
+                    rewards[f"structure_safe_{r}_{c}"] = 0.003 * s["priority"]
 
         # ── Cells suppressed ── reward each BURNING → SUPPRESSED transition
         # since the last reward computation.  The agent cannot game this by
         # re-burning cells because it does not control ignition — fire
         # spreads via physics.
         if st.cells_suppressed_this_step > 0:
-            rewards["cells_suppressed"] = 0.03 * st.cells_suppressed_this_step
+            rewards["cells_suppressed"] = 0.04 * st.cells_suppressed_this_step
             st.cells_suppressed_this_step = 0
+
+        # ── Active fire pressure ── a small ongoing penalty while fire remains
+        # active. This encourages earlier containment and stops "wait it out"
+        # behavior from collecting better reward than decisive action.
+        if st.total_burning > 0:
+            rewards["active_fire_pressure"] = -0.008 * min(st.total_burning, 10)
 
         # ── Fire extinguished ── one-time bonus when all fires are out.
         if st.total_burning == 0 and st.step > 0 and not self._fire_extinguished_rewarded:
-            rewards["fire_extinguished"] = 0.50
+            containment_speed = max(
+                0.0,
+                1.0 - (st.step / max(1, self.config.max_steps)),
+            )
+            rewards["fire_extinguished"] = 0.30 + 0.40 * containment_speed
             self._fire_extinguished_rewarded = True
-
-        # ── Area preserved ── continuous shaping proportional to unburned area.
-        total_burnable = int(np.sum(
-            (self.terrain.fuel_type != FUEL_NONE) & ~self.terrain.is_water
-        ))
-        if total_burnable > 0:
-            preserved_ratio = 1.0 - (st.total_burned + st.total_burning) / total_burnable
-            rewards["area_preserved"] = preserved_ratio * 0.02
 
         return rewards

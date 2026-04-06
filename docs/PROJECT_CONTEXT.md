@@ -43,6 +43,8 @@ agents.
 
 **Emergence-first modeling spec:** [docs/EMERGENCE_FIRST_MODELING_SPEC.md](./EMERGENCE_FIRST_MODELING_SPEC.md)
 
+**Reward audit harness:** [docs/REWARD_AUDIT_HARNESS.md](./REWARD_AUDIT_HARNESS.md)
+
 ---
 
 ## OpenEnv Framework — Key Links

@@ -96,14 +96,14 @@ TASK_GOALS = {
 # Aerial assets cost more (fuel, maintenance, flight hours).
 # Backfire carries highest ground cost (reflects risk, IC authorization overhead).
 MISSION_COST = {
-    "direct_attack": -0.005,
-    "line_construction": -0.01,
-    "wet_line": -0.008,
-    "water_drop": -0.015,
-    "retardant_drop": -0.025,
-    "point_protection": -0.008,
-    "backfire": -0.03,
-    "staging": -0.002,
+    "direct_attack": -0.003,
+    "line_construction": -0.005,
+    "wet_line": -0.004,
+    "water_drop": -0.008,
+    "retardant_drop": -0.012,
+    "point_protection": -0.004,
+    "backfire": -0.015,
+    "staging": -0.001,
 }
 
 # Resource → allowed missions.  Based on NWCG resource typing.

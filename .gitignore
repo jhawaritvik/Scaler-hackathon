@@ -5,6 +5,7 @@ __pycache__/
 venv/
 *.egg-info/
 baseline_scores.json
+reward_audit_report.json
 
 wildfire_env/.venv/
 wildfire_env/.pytest_cache/
