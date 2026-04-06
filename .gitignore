@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+baseline_scores.json
+
+wildfire_env/.venv/
+wildfire_env/.pytest_cache/
+wildfire_env/openenv_wildfire_env.egg-info/
+wildfire_env/smoke_output.txt
+wildfire_env/trace_out.txt
+wildfire_env/trace_output.txt
