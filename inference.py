@@ -7,6 +7,8 @@ tasks (easy, medium, hard) and reports final grader scores.
 
 Required environment variable:
     OPENAI_API_KEY   — API key for the OpenAI client
+    or
+    HF_TOKEN         — compatible token used as the OpenAI client API key
 
 Optional environment variables:
     API_BASE_URL     — Override base URL (e.g., for compatible endpoints)
@@ -28,8 +30,10 @@ import sys
 # ---------------------------------------------------------------------------
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
 API_BASE_URL = os.environ.get("API_BASE_URL", None)
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+API_TOKEN = OPENAI_API_KEY or HF_TOKEN
 
 # ---------------------------------------------------------------------------
 # Local imports — direct Python integration, no HTTP server needed
@@ -39,6 +43,7 @@ _repo_root = os.path.dirname(os.path.abspath(__file__))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
+from wildfire_env.server.terrain import DEFAULT_SEEDS
 from wildfire_env.server.wildfire_env_environment import WildfireEnvironment
 from wildfire_env.server.app import GraderRequest, _grade_episode
 from wildfire_env.models import (
@@ -187,29 +192,38 @@ def _compute_score(obs: WildfireObservation) -> float:
 # Main inference loop
 # ---------------------------------------------------------------------------
 
+TASK_RUNS = [
+    ("easy", DEFAULT_SEEDS["easy"]),
+    ("medium", DEFAULT_SEEDS["medium"]),
+    ("hard", DEFAULT_SEEDS["hard"]),
+]
+
+
 def run_inference() -> dict[str, float]:
     """Run the LLM agent over all three tasks and return {task_id: score}."""
-    if not OPENAI_API_KEY:
-        print("ERROR: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
+    if not API_TOKEN:
+        print(
+            "ERROR: set OPENAI_API_KEY or HF_TOKEN before running inference.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     from openai import OpenAI
 
-    client_kwargs: dict = {"api_key": OPENAI_API_KEY}
+    client_kwargs: dict = {"api_key": API_TOKEN}
     if API_BASE_URL:
         client_kwargs["base_url"] = API_BASE_URL
 
     client = OpenAI(**client_kwargs)
-    env = WildfireEnvironment()
     scores: dict[str, float] = {}
 
     print(f"Model: {MODEL_NAME}")
     print("=" * 60)
 
-    for episode in range(3):
-        obs = env.reset()
-        task_id = obs.task_id
-        print(f"\nTask [{episode + 1}/3]: {task_id}")
+    for episode, (task_id, seed) in enumerate(TASK_RUNS, start=1):
+        env = WildfireEnvironment()
+        obs = env.reset(task_id=task_id, seed=seed)
+        print(f"\nTask [{episode}/{len(TASK_RUNS)}]: {task_id} (seed={seed})")
         print(f"  Goal: {obs.goal}")
         print(f"  Resources: {obs.resources_remaining}")
 
@@ -235,6 +249,7 @@ def run_inference() -> dict[str, float]:
             f"{obs.structures_remaining}/{obs.structures_remaining + obs.structures_lost} "
             f"structures saved)"
         )
+        env.close()
 
     print("\n" + "=" * 60)
     print("BASELINE SCORES:")
@@ -249,6 +264,7 @@ def run_inference() -> dict[str, float]:
         json.dump(
             {
                 "model": MODEL_NAME,
+                "task_runs": [{"task_id": task_id, "seed": seed} for task_id, seed in TASK_RUNS],
                 "scores": scores,
                 "average": round(avg, 4),
             },

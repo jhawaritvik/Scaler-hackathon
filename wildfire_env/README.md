@@ -62,7 +62,7 @@ uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
 ### Docker
 
 ```bash
-docker build -t wildfire-env:latest -f wildfire_env/server/Dockerfile wildfire_env/
+docker build -t wildfire-env:latest ..
 docker run -p 8000:8000 wildfire-env:latest
 ```
 
@@ -70,7 +70,7 @@ docker run -p 8000:8000 wildfire-env:latest
 
 ```bash
 python -m wildfire_env.test_env_smoke
-openenv validate wildfire_env
+openenv validate .
 ```
 
 ---
@@ -185,15 +185,15 @@ Each `FleetUnit` tracks: `status` (available / en_route / operating / returning)
 
 | | easy | medium | hard |
 |---|---|---|---|
-| Seed | 42 | 123 | 777 |
-| Ignitions | 1 at step 0 | 2 at step 0 | 3 at steps 0, 5, 10 |
-| Temperature | 25°C | 30°C | 35°C |
-| Humidity | 55% | 40% | 30% |
-| Wind | 8 km/h | 15 km/h | 22 km/h |
-| Water bodies | 2 | 1 | 0 |
-| Structures | 2 × priority 1 | 2×p1 + 2×p2 | 2×p1 + 2×p2 + 1×p3 |
-| Resources | 4c 3e 2h 1a 2d 1s | 3c 2e 1h 1a 1d | 2c 1e 1h 0a 1d |
-| Max steps | 20 | 20 | 20 |
+| Seed | 42 | 125 | 777 |
+| Ignitions | 1 at step 0 | 1 at step 0 + 1 at step 7 | 2 at step 0 + 1 at step 4 + 1 at step 9 |
+| Temperature | 27.8°C | 32.2°C | 33.4°C |
+| Humidity | 60.2% | 45.7% | 28.5% |
+| Wind | 10.5 km/h | 18.7 km/h | 23.4 km/h |
+| Water bodies | 3 | 1 | 0 |
+| Structures | 2 × priority 1 | 2 × priority 1 + 1 × priority 2 | 1 × p1 + 3 × p2 + 2 × p3 |
+| Default seeded resources | 3c 4e 2h 1a 1d 1s | 3c 1e 2h 0a 2d | 1c 1e 0h 0a 1d |
+| Max steps | 20 | 15 | 20 |
 
 **Grader formula (0.0–1.0):**
 - 60% — Structure protection: saved priority / total priority, weighted by structure priority values
@@ -241,11 +241,13 @@ Dense per-step reward composed of:
 |--------|-------|---------|
 | Structure burning | −0.20 × priority | Each step a structure is on fire (urgency signal) |
 | Structure lost | −0.50 × priority | **Once** when a structure cell transitions to burned |
-| Structure safe | +0.01 × priority | Each step a structure remains intact |
-| Cells suppressed | +0.03 per cell | Each BURNING cell extinguished by resource action |
-| Fire extinguished | +0.50 | **Once** when all burning cells reach zero |
-| Area preserved | +0.02 × preserved_ratio | Proportional to unburned area each step |
-| Action cost | −0.005 to −0.03 | Per dispatch (aerial assets cost more) |
+| Structure safe | +0.003 × priority | Each step an intact structure stays under nearby threat without being lost |
+| Cells suppressed | +0.04 per cell | Each BURNING cell extinguished by resource action |
+| Cells protected | +0.0025 per cell | Each newly protected threatened unburned cell, capped at 12 cells per step |
+| Fire extinguished | +0.30 to +0.70 | **Once** when all burning cells reach zero, scaled by containment speed |
+| Active fire pressure | −0.008 × min(burning_cells, 10) | Each step while fire remains active |
+| Mission dispatch cost | −0.001 to −0.015 | Per dispatch, based on mission type |
+| Resource dispatch surcharge | −0.0005 to −0.0040 | Additional per dispatch, based on resource type |
 | Invalid action | −0.05 | Rejected assignment |
 | Low-impact action | −0.02 | Wasteful mission |
 
@@ -260,6 +262,12 @@ Run the LLM agent:
 OPENAI_API_KEY=sk-... python inference.py
 ```
 
+Compatible token-based setup:
+
+```bash
+HF_TOKEN=hf_or_provider_token API_BASE_URL=https://your-endpoint/v1 MODEL_NAME=your-model python inference.py
+```
+
 Run the deterministic heuristic baseline (no API key needed):
 ```bash
 curl http://localhost:8000/baseline
@@ -267,9 +275,9 @@ curl http://localhost:8000/baseline
 
 | Task | Heuristic baseline |
 |------|--------------------|
-| easy | TBD (run `/baseline`) |
-| medium | TBD (run `/baseline`) |
-| hard | TBD (run `/baseline`) |
+| easy | 0.9950 |
+| medium | 0.9467 |
+| hard | 0.0095 |
 
 ---
 

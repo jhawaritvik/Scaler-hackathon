@@ -291,6 +291,12 @@ class SimulationState:
     # Reset to 0 at the start of each tick().  Read by compute_environmental_rewards().
     cells_suppressed_this_step: int = 0
 
+    # Newly protected threatened cells this tick. This increments only when an
+    # intervention upgrades an at-risk unburned cell into a more resilient
+    # state, which gives us a "cells saved" style signal without paying for
+    # every untouched cell in the map.
+    cells_protected_this_step: int = 0
+
     # Retardant permanent ignition-threshold bonus (per-cell, cumulative,
     # capped at 0.40).  Populated by apply_retardant_drop(); read during
     # ignition checks in tick().  Initialized to None so we only allocate
@@ -382,6 +388,29 @@ class FireSimulation:
         self._update_statistics()
 
         return self.state
+
+    def _cell_under_threat(self, row: int, col: int, radius: int = 4) -> bool:
+        """Return whether a cell is currently under meaningful fire threat."""
+        if self.state is None:
+            return False
+
+        st = self.state
+        if st.total_burning <= 0:
+            return False
+
+        if st.heat[row, col] >= IGNITION_THRESHOLD * 0.45:
+            return True
+
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                if abs(dr) + abs(dc) > radius:
+                    continue
+                nr, nc = row + dr, col + dc
+                if not self._in_bounds(nr, nc):
+                    continue
+                if st.cell_state[nr, nc] == STATE_BURNING:
+                    return True
+        return False
 
     def tick(self) -> SimulationState:
         """
@@ -1124,6 +1153,8 @@ class FireSimulation:
                     st.fuel_moisture[nr, nc] = min(1.0, st.fuel_moisture[nr, nc] + 0.10)
                     st.heat[nr, nc] *= 0.60
                     if cs == STATE_UNBURNED:
+                        if self._cell_under_threat(nr, nc):
+                            st.cells_protected_this_step += 1
                         st.cell_state[nr, nc] = STATE_SUPPRESSED
                     hardened += 1
 
@@ -1176,6 +1207,8 @@ class FireSimulation:
                         extinguished += 1
                         st.cells_suppressed_this_step += 1
                 elif cs == STATE_UNBURNED:
+                    if self._cell_under_threat(nr, nc):
+                        st.cells_protected_this_step += 1
                     st.cell_state[nr, nc] = STATE_SUPPRESSED
 
         if affected == 0:
@@ -1197,6 +1230,8 @@ class FireSimulation:
         if cs in (STATE_WATER, STATE_STRUCTURE, STATE_BURNING, STATE_BURNED):
             return False, "firebreak segment blocked by current cell state"
 
+        if cs == STATE_UNBURNED and self._cell_under_threat(row, col):
+            st.cells_protected_this_step += 1
         st.cell_state[row, col] = STATE_FIREBREAK
         st.heat[row, col] = 0.0
         st.intensity[row, col] = 0.0
@@ -1301,6 +1336,8 @@ class FireSimulation:
                     )
                     st.heat[nr, nc] *= 0.50
                     if cs == STATE_UNBURNED:
+                        if self._cell_under_threat(nr, nc):
+                            st.cells_protected_this_step += 1
                         st.cell_state[nr, nc] = STATE_SUPPRESSED
                     hardened += 1
 
@@ -1363,6 +1400,8 @@ class FireSimulation:
                         extinguished += 1
                         st.cells_suppressed_this_step += 1
                 elif cs == STATE_UNBURNED:
+                    if self._cell_under_threat(nr, nc):
+                        st.cells_protected_this_step += 1
                     st.cell_state[nr, nc] = STATE_SUPPRESSED
 
         if affected == 0:
@@ -1441,6 +1480,8 @@ class FireSimulation:
                         extinguished += 1
                         st.cells_suppressed_this_step += 1
                 elif cs == STATE_UNBURNED:
+                    if self._cell_under_threat(nr, nc):
+                        st.cells_protected_this_step += 1
                     st.cell_state[nr, nc] = STATE_SUPPRESSED
 
         if affected == 0:
@@ -1479,6 +1520,8 @@ class FireSimulation:
         st.fuel_moisture[row, col] = min(1.0, 0.90)
         st.heat[row, col] = 0.0
         if cs == STATE_UNBURNED:
+            if self._cell_under_threat(row, col):
+                st.cells_protected_this_step += 1
             st.cell_state[row, col] = STATE_SUPPRESSED
         return True, "wet-line segment applied"
 
@@ -1703,6 +1746,12 @@ class FireSimulation:
         if st.cells_suppressed_this_step > 0:
             rewards["cells_suppressed"] = 0.04 * st.cells_suppressed_this_step
             st.cells_suppressed_this_step = 0
+
+        # ── Threatened cells protected ── reward preventive work only when it
+        # upgrades cells that were actually at risk from nearby fire or heat.
+        if st.cells_protected_this_step > 0:
+            rewards["cells_protected"] = 0.0025 * min(st.cells_protected_this_step, 12)
+            st.cells_protected_this_step = 0
 
         # ── Active fire pressure ── a small ongoing penalty while fire remains
         # active. This encourages earlier containment and stops "wait it out"

@@ -839,6 +839,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         smokejumpers=(0, 1),
         num_ground_outposts=(2, 3),
         num_air_bases=(1, 2),
+        max_steps=15,
     ),
     "hard": DifficultySpec(
         elevation_roughness=(0.5, 0.8),
@@ -872,7 +873,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
 # evaluator always see the same episodes.
 DEFAULT_SEEDS: dict[str, int] = {
     "easy": 42,
-    "medium": 123,
+    "medium": 125,
     "hard": 777,
 }
 

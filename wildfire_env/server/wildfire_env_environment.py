@@ -106,6 +106,17 @@ MISSION_COST = {
     "staging": -0.001,
 }
 
+# Per-resource dispatch surcharge. This keeps the reward aware of which
+# assets were committed, not just which mission label was chosen.
+RESOURCE_DISPATCH_COST = {
+    "crews": -0.0005,
+    "engines": -0.0010,
+    "helicopters": -0.0025,
+    "airtankers": -0.0040,
+    "dozers": -0.0015,
+    "smokejumpers": -0.0025,
+}
+
 # Resource → allowed missions.  Based on NWCG resource typing.
 # Hand crews: versatile ground force, can set backfires (drip torch ops)
 # Engines: pump-and-roll, foam spray, mobile attack
@@ -1079,7 +1090,12 @@ class WildfireEnvironment(Environment):
             f"{unit.unit_id} assigned to {assignment.mission_type} on {target_summary} "
             f"(ETA {dispatch_steps} step(s))"
         )
-        return MISSION_COST[assignment.mission_type], summary, None
+        return (
+            MISSION_COST[assignment.mission_type]
+            + RESOURCE_DISPATCH_COST[unit.resource_type],
+            summary,
+            None,
+        )
 
     def _schedule_assignments(self, action: WildfireAction) -> float:
         self._last_action_error = None
