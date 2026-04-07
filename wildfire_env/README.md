@@ -185,14 +185,14 @@ Each `FleetUnit` tracks: `status` (available / en_route / operating / returning)
 
 | | easy | medium | hard |
 |---|---|---|---|
-| Seed | 42 | 34 | 12 |
-| Ignitions | 1 at step 0 | 2 at step 0 + 1 at step 8 | 3 at step 0 + 2 at step 10 |
-| Temperature | 26.3°C | 29.8°C | 38.8°C |
-| Humidity | 51.9% | 30.3% | 30.6% |
-| Wind | 6.7 km/h | 17.2 km/h | 25.5 km/h |
-| Water bodies | 3 | 2 | 0 |
-| Structures | 3 × priority 1 | 2 × priority 1 + 1 × priority 2 | 3 × p1 + 1 × p2 + 1 × p3 |
-| Default seeded resources | 4c 4e 2h 1a 2d 1s | 4c 1e 2h 0a 1d 1s | 2c 1e 1h 0a 1d |
+| Seed | 42 | 67 | 12 |
+| Ignitions | 1 at step 0 | 2 at step 0 + 1 at step 3 | 3 at step 0 + 2 at step 10 |
+| Temperature | 26.3C | 27.6C | 38.8C |
+| Humidity | 51.9% | 43.7% | 30.6% |
+| Wind | 6.7 km/h | 19.0 km/h | 25.5 km/h |
+| Water bodies | 3 | 1 | 0 |
+| Structures | 3 x priority 1 | 2 x priority 1 + 2 x priority 2 | 3 x p1 + 1 x p2 + 1 x p3 |
+| Default seeded resources | 4c 4e 2h 1a 2d 1s | 2c 1e 2h 1a 2d 1s | 2c 1e 1h 0a 1d |
 | Max steps | 20 | 15 | 20 |
 
 **Grader formula (0.0–1.0):**
@@ -270,7 +270,7 @@ curl http://localhost:8000/baseline
 | Task | Heuristic baseline |
 |------|--------------------|
 | easy | 0.9950 |
-| medium | 0.9384 |
+| medium | 0.7954 |
 | hard | 0.0148 |
 
 ---
@@ -293,3 +293,4 @@ Primary state variables and their direct couplings are modelled explicitly. Name
 | Dispatch timings | NWCG / USDA AFUE study |
 | Aspect modifiers | NWCG S-190 |
 | Fuel extinction moisture | Scott & Burgan (2005) |
+

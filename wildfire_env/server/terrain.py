@@ -891,7 +891,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
 # evaluator always see the same episodes.
 DEFAULT_SEEDS: dict[str, int] = {
     "easy": 42,
-    "medium": 34,
+    "medium": 67,
     "hard": 12,
 }
 

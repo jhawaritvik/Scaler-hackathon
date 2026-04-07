@@ -130,9 +130,9 @@ docker run -p 8000:8000 wildfire-env
 Deterministic heuristic baseline via `/baseline`:
 
 - `easy`: `0.9950`
-- `medium`: `0.9384`
+- `medium`: `0.7954`
 - `hard`: `0.0148`
-- average: `0.6494`
+- average: `0.6017`
 
 LLM baseline script:
 
