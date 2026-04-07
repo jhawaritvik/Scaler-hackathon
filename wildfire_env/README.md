@@ -239,7 +239,7 @@ Dense per-step reward composed of:
 
 | Signal | Value | Trigger |
 |--------|-------|---------|
-| Structure burning | −0.20 × priority | Each step a structure is on fire (urgency signal) |
+| Structure burning | −0.12 × priority | Each step a structure is on fire (urgency signal) |
 | Structure lost | −0.50 × priority | **Once** when a structure cell transitions to burned |
 | Structure safe | +0.003 × priority | Each step an intact structure stays under nearby threat without being lost |
 | Cells suppressed | +0.04 per cell | Each BURNING cell extinguished by resource action |

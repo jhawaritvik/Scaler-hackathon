@@ -1,3 +1,15 @@
+---
+title: Wildfire Resource Allocation Environment
+emoji: "\U0001F525"
+colorFrom: red
+colorTo: orange
+sdk: docker
+pinned: false
+app_port: 8000
+tags:
+  - openenv
+---
+
 # Wildfire Resource Allocation Environment
 
 This repository contains an OpenEnv-compatible wildfire incident-command
@@ -76,7 +88,7 @@ The reward gives partial progress signals over the trajectory:
 
 | Signal | Amount | Trigger |
 |---|---:|---|
-| `structure_burning` | `-0.20 × priority` | Each step a structure cell is burning |
+| `structure_burning` | `-0.12 × priority` | Each step a structure cell is burning |
 | `structure_lost` | `-0.50 × priority` | Once when a structure transitions to burned |
 | `structure_safe` | `+0.003 × priority` | Each step an intact structure remains under nearby threat |
 | `cells_suppressed` | `+0.04` per cell | Each burning cell extinguished that step |
@@ -126,7 +138,7 @@ LLM baseline script:
 
 - root script: `inference.py`
 - uses OpenAI client
-- reads `OPENAI_API_KEY` or `HF_TOKEN`, plus `API_BASE_URL` and `MODEL_NAME`
+- reads `HF_TOKEN`, `API_BASE_URL`, and `MODEL_NAME`
 - runs explicit seeded task episodes for reproducibility
 
 ## Submission Files

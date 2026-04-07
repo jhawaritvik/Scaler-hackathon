@@ -2,17 +2,16 @@
 """
 Wildfire Environment — LLM Baseline Inference Script
 
-Uses the OpenAI API client to run an LLM agent against all three wildfire
-tasks (easy, medium, hard) and reports final grader scores.
+Uses the OpenAI API client (OpenAI-compatible transport) to run an LLM agent
+against all three wildfire tasks (easy, medium, hard) and reports final
+grader scores.
 
 Required environment variable:
-    OPENAI_API_KEY   — API key for the OpenAI client
-    or
-    HF_TOKEN         — compatible token used as the OpenAI client API key
+    HF_TOKEN         — Hugging Face API token
 
 Optional environment variables:
-    API_BASE_URL     — Override base URL (e.g., for compatible endpoints)
-    MODEL_NAME       — Model identifier (default: gpt-4o-mini)
+    API_BASE_URL     — HF inference endpoint (default: https://router.hugging-face.cn/v1/)
+    MODEL_NAME       — Model identifier (default: meta-llama/Meta-Llama-3.1-8B-Instruct)
 
 Usage:
     python inference.py
@@ -29,11 +28,10 @@ import sys
 # Environment variables
 # ---------------------------------------------------------------------------
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-API_BASE_URL = os.environ.get("API_BASE_URL", None)
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-API_TOKEN = OPENAI_API_KEY or HF_TOKEN
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.hugging-face.cn/v1/")
+MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+API_TOKEN = HF_TOKEN
 
 # ---------------------------------------------------------------------------
 # Local imports — direct Python integration, no HTTP server needed
@@ -203,18 +201,14 @@ def run_inference() -> dict[str, float]:
     """Run the LLM agent over all three tasks and return {task_id: score}."""
     if not API_TOKEN:
         print(
-            "ERROR: set OPENAI_API_KEY or HF_TOKEN before running inference.",
+            "ERROR: set HF_TOKEN before running inference.",
             file=sys.stderr,
         )
         sys.exit(1)
 
     from openai import OpenAI
 
-    client_kwargs: dict = {"api_key": API_TOKEN}
-    if API_BASE_URL:
-        client_kwargs["base_url"] = API_BASE_URL
-
-    client = OpenAI(**client_kwargs)
+    client = OpenAI(api_key=API_TOKEN, base_url=API_BASE_URL)
     scores: dict[str, float] = {}
 
     print(f"Model: {MODEL_NAME}")

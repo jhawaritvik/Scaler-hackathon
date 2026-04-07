@@ -286,8 +286,8 @@ class SimulationState:
     structures_lost: int = 0
     structures_saved: int = 0
 
-    # Cells suppressed this tick — incremented by apply_crew(), apply_bomber(),
-    # apply_retardant_drop() when a BURNING cell transitions to SUPPRESSED.
+    # Cells suppressed this tick — incremented by apply_crew(), apply_engine(),
+    # apply_helicopter(), apply_airtanker() when a BURNING cell transitions to SUPPRESSED.
     # Reset to 0 at the start of each tick().  Read by compute_environmental_rewards().
     cells_suppressed_this_step: int = 0
 
@@ -1166,58 +1166,6 @@ class FireSimulation:
             f"hardened {hardened} cells"
         )
 
-    def apply_bomber(self, row: int, col: int) -> tuple[bool, str]:
-        """
-        Apply an aerial water drop over a small radius.
-
-        Bombers are stronger than crews and mainly work by rapid cooling and
-        heavy moisture addition over a wider area.
-        """
-        if self.state is None:
-            return False, "simulation not initialized"
-        if not self._in_bounds(row, col):
-            return False, "water-drop target is out of bounds"
-
-        st = self.state
-        affected = 0
-        extinguished = 0
-
-        for dr in range(-2, 3):
-            for dc in range(-2, 3):
-                nr, nc = row + dr, col + dc
-                if not self._in_bounds(nr, nc):
-                    continue
-                if dr * dr + dc * dc > 4:
-                    continue
-
-                cs = st.cell_state[nr, nc]
-                if cs in (STATE_WATER, STATE_FIREBREAK, STATE_BURNED):
-                    continue
-
-                affected += 1
-                st.fuel_moisture[nr, nc] = min(1.0, st.fuel_moisture[nr, nc] + 0.18)
-                st.heat[nr, nc] *= 0.20
-
-                if cs == STATE_BURNING:
-                    st.intensity[nr, nc] *= 0.30
-                    if st.intensity[nr, nc] < 0.75:
-                        st.cell_state[nr, nc] = STATE_SUPPRESSED
-                        st.intensity[nr, nc] = 0.0
-                        st.heat[nr, nc] = 0.0
-                        extinguished += 1
-                        st.cells_suppressed_this_step += 1
-                elif cs == STATE_UNBURNED:
-                    if self._cell_under_threat(nr, nc):
-                        st.cells_protected_this_step += 1
-                    st.cell_state[nr, nc] = STATE_SUPPRESSED
-
-        if affected == 0:
-            return False, "water drop had no reachable effect"
-
-        return True, (
-            f"water drop treated {affected} cells and suppressed {extinguished} burning cells"
-        )
-
     def apply_dozer_segment(self, row: int, col: int) -> tuple[bool, str]:
         """Build a single firebreak cell for time-staggered dozer work."""
         if self.state is None:
@@ -1718,7 +1666,7 @@ class FireSimulation:
         for s in self.terrain.structures:
             r, c = s["row"], s["col"]
             if st.cell_state[r, c] == STATE_BURNING:
-                rewards[f"structure_burning_{r}_{c}"] = -0.20 * s["priority"]
+                rewards[f"structure_burning_{r}_{c}"] = -0.12 * s["priority"]
             elif st.cell_state[r, c] == STATE_BURNED:
                 if (r, c) not in self._structures_lost_penalized:
                     rewards[f"structure_lost_{r}_{c}"] = -0.50 * s["priority"]
