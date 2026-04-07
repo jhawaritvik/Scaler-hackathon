@@ -67,6 +67,12 @@ app = create_app(
 )
 
 
+@app.get("/")
+def root():
+    """Health / landing endpoint."""
+    return {"status": "ok", "environment": "wildfire_env"}
+
+
 # ---------------------------------------------------------------------------
 # Static task catalogue
 # ---------------------------------------------------------------------------
