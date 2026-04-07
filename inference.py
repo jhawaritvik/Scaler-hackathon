@@ -11,7 +11,7 @@ Required environment variable:
 
 Optional environment variables:
     API_BASE_URL     — HF inference endpoint (default: https://router.huggingface.co/v1/)
-    MODEL_NAME       — Model identifier (default: meta-llama/Meta-Llama-3.1-8B-Instruct)
+    MODEL_NAME       — Model identifier (default: meta-llama/Llama-3.1-8B-Instruct)
 
 Usage:
     python inference.py
@@ -29,7 +29,7 @@ import sys
 # ---------------------------------------------------------------------------
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
-MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 if HF_TOKEN is None:
