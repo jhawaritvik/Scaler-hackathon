@@ -185,14 +185,14 @@ Each `FleetUnit` tracks: `status` (available / en_route / operating / returning)
 
 | | easy | medium | hard |
 |---|---|---|---|
-| Seed | 42 | 125 | 777 |
-| Ignitions | 1 at step 0 | 1 at step 0 + 1 at step 7 | 2 at step 0 + 1 at step 4 + 1 at step 9 |
-| Temperature | 27.8°C | 32.2°C | 33.4°C |
-| Humidity | 60.2% | 45.7% | 28.5% |
-| Wind | 10.5 km/h | 18.7 km/h | 23.4 km/h |
-| Water bodies | 3 | 1 | 0 |
-| Structures | 2 × priority 1 | 2 × priority 1 + 1 × priority 2 | 1 × p1 + 3 × p2 + 2 × p3 |
-| Default seeded resources | 3c 4e 2h 1a 1d 1s | 3c 1e 2h 0a 2d | 1c 1e 0h 0a 1d |
+| Seed | 42 | 34 | 12 |
+| Ignitions | 1 at step 0 | 2 at step 0 + 1 at step 8 | 3 at step 0 + 2 at step 10 |
+| Temperature | 26.3°C | 29.8°C | 38.8°C |
+| Humidity | 51.9% | 30.3% | 30.6% |
+| Wind | 6.7 km/h | 17.2 km/h | 25.5 km/h |
+| Water bodies | 3 | 2 | 0 |
+| Structures | 3 × priority 1 | 2 × priority 1 + 1 × priority 2 | 3 × p1 + 1 × p2 + 1 × p3 |
+| Default seeded resources | 4c 4e 2h 1a 2d 1s | 4c 1e 2h 0a 1d 1s | 2c 1e 1h 0a 1d |
 | Max steps | 20 | 15 | 20 |
 
 **Grader formula (0.0–1.0):**
@@ -276,8 +276,8 @@ curl http://localhost:8000/baseline
 | Task | Heuristic baseline |
 |------|--------------------|
 | easy | 0.9950 |
-| medium | 0.9467 |
-| hard | 0.0095 |
+| medium | 0.9384 |
+| hard | 0.0148 |
 
 ---
 

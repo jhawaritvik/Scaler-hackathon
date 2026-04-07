@@ -1093,9 +1093,9 @@ class FireSimulation:
         for s in self.terrain.structures:
             r, c = s["row"], s["col"]
             cs = st.cell_state[r, c]
-            if cs in (STATE_BURNED, STATE_BURNING):
+            if cs == STATE_BURNED:
                 st.structures_lost += 1
-            elif cs in (STATE_STRUCTURE, STATE_SUPPRESSED, STATE_UNBURNED):
+            else:  # STRUCTURE, SUPPRESSED, BURNING — still standing
                 st.structures_saved += 1
 
     # ──────────────────────────────────────────────────

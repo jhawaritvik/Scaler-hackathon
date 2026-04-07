@@ -15,6 +15,7 @@ value from each range.  Same seed + same difficulty = identical episode.
 """
 
 import math
+import zlib
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Optional
@@ -245,65 +246,81 @@ def _draw_float(rng: np.random.Generator, lo: float, hi: float) -> float:
     return float(rng.uniform(lo, hi))
 
 
+def _rng_for(seed: int, stream: str) -> np.random.Generator:
+    """Create a deterministic substream RNG for one scenario component.
+
+    This keeps difficulty-axis changes isolated. For example, increasing the
+    number of ignitions should not also silently change the sampled resources
+    or structure priorities for the same task seed.
+    """
+    stream_id = zlib.crc32(stream.encode("utf-8")) & 0xFFFFFFFF
+    return np.random.default_rng(np.random.SeedSequence([seed, stream_id]))
+
+
 def draw_scenario(spec: DifficultySpec, seed: int) -> TerrainConfig:
     """Draw a concrete ``TerrainConfig`` from a difficulty spec using *seed*.
 
     The same (spec, seed) pair always produces the identical config.
     """
-    rng = np.random.default_rng(seed)
     size = spec.grid_size
+    terrain_rng = _rng_for(seed, "terrain")
+    weather_rng = _rng_for(seed, "weather")
+    fire_rng = _rng_for(seed, "fire")
+    structures_rng = _rng_for(seed, "structures")
+    resources_rng = _rng_for(seed, "resources")
+    outposts_rng = _rng_for(seed, "outposts")
 
     # --- Terrain ---
-    roughness = _draw_float(rng, *spec.elevation_roughness)
-    n_water = _draw_int(rng, *spec.num_water_bodies)
+    roughness = _draw_float(terrain_rng, *spec.elevation_roughness)
+    n_water = _draw_int(terrain_rng, *spec.num_water_bodies)
 
-    grass = _draw_float(rng, *spec.fuel_grass)
-    brush = _draw_float(rng, *spec.fuel_brush)
-    forest = _draw_float(rng, *spec.fuel_forest)
+    grass = _draw_float(terrain_rng, *spec.fuel_grass)
+    brush = _draw_float(terrain_rng, *spec.fuel_brush)
+    forest = _draw_float(terrain_rng, *spec.fuel_forest)
     none_frac = max(0.02, 1.0 - grass - brush - forest)
     total = none_frac + grass + brush + forest
     fuel_probs = (none_frac / total, grass / total, brush / total, forest / total)
 
     # --- Weather ---
-    temperature = _draw_float(rng, *spec.temperature)
-    humidity = _draw_float(rng, *spec.humidity)
-    wind_speed = _draw_float(rng, *spec.wind_speed)
-    wind_direction = _draw_float(rng, 0.0, 360.0)
-    temp_amp = _draw_float(rng, *spec.temp_amplitude)
-    hum_swing = _draw_float(rng, *spec.humidity_swing)
+    temperature = _draw_float(weather_rng, *spec.temperature)
+    humidity = _draw_float(weather_rng, *spec.humidity)
+    wind_speed = _draw_float(weather_rng, *spec.wind_speed)
+    wind_direction = _draw_float(weather_rng, 0.0, 360.0)
+    temp_amp = _draw_float(weather_rng, *spec.temp_amplitude)
+    hum_swing = _draw_float(weather_rng, *spec.humidity_swing)
 
     # --- Fire (ignitions) ---
-    n_step0 = _draw_int(rng, *spec.ignitions_step0)
-    n_delayed = _draw_int(rng, *spec.delayed_ignitions)
+    n_step0 = _draw_int(fire_rng, *spec.ignitions_step0)
+    n_delayed = _draw_int(fire_rng, *spec.delayed_ignitions)
 
     ignition_points: list[dict] = [{"step": 0} for _ in range(n_step0)]
     for _ in range(n_delayed):
-        step = _draw_int(rng, *spec.delayed_step_range)
+        step = _draw_int(fire_rng, *spec.delayed_step_range)
         ignition_points.append({"step": step})
 
     # --- Structures ---
-    n_structures = _draw_int(rng, *spec.num_structures)
+    n_structures = _draw_int(structures_rng, *spec.num_structures)
     structures: list[dict] = []
     for i in range(n_structures):
         # Priority distribution: mostly low, some high
         if spec.max_priority == 1:
             p = 1
         else:
-            p = _draw_int(rng, 1, spec.max_priority)
+            p = _draw_int(structures_rng, 1, spec.max_priority)
         structures.append({"priority": p})
 
     # --- Resources ---
     resource_counts = {
-        "crews": _draw_int(rng, *spec.crews),
-        "engines": _draw_int(rng, *spec.engines),
-        "helicopters": _draw_int(rng, *spec.helicopters),
-        "airtankers": _draw_int(rng, *spec.airtankers),
-        "dozers": _draw_int(rng, *spec.dozers),
-        "smokejumpers": _draw_int(rng, *spec.smokejumpers),
+        "crews": _draw_int(resources_rng, *spec.crews),
+        "engines": _draw_int(resources_rng, *spec.engines),
+        "helicopters": _draw_int(resources_rng, *spec.helicopters),
+        "airtankers": _draw_int(resources_rng, *spec.airtankers),
+        "dozers": _draw_int(resources_rng, *spec.dozers),
+        "smokejumpers": _draw_int(resources_rng, *spec.smokejumpers),
     }
 
     # --- Outposts ---
-    outposts = _generate_outposts(rng, size, resource_counts, spec)
+    outposts = _generate_outposts(outposts_rng, size, resource_counts, spec)
 
     return TerrainConfig(
         grid_size=size,
@@ -826,8 +843,8 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         wind_speed=(10.0, 20.0),
         temp_amplitude=(8.0, 12.0),
         humidity_swing=(0.12, 0.20),
-        ignitions_step0=(1, 2),
-        delayed_ignitions=(0, 1),
+        ignitions_step0=(2, 2),
+        delayed_ignitions=(1, 1),
         delayed_step_range=(3, 8),
         num_structures=(3, 4),
         max_priority=2,
@@ -873,8 +890,8 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
 # evaluator always see the same episodes.
 DEFAULT_SEEDS: dict[str, int] = {
     "easy": 42,
-    "medium": 125,
-    "hard": 777,
+    "medium": 34,
+    "hard": 12,
 }
 
 
