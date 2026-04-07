@@ -10,7 +10,7 @@ Required environment variable:
     HF_TOKEN         — Hugging Face API token
 
 Optional environment variables:
-    API_BASE_URL     — HF inference endpoint (default: https://router.hugging-face.cn/v1/)
+    API_BASE_URL     — HF inference endpoint (default: https://router.huggingface.co/v1/)
     MODEL_NAME       — Model identifier (default: meta-llama/Meta-Llama-3.1-8B-Instruct)
 
 Usage:
@@ -28,10 +28,12 @@ import sys
 # Environment variables
 # ---------------------------------------------------------------------------
 
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.hugging-face.cn/v1/")
-MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Meta-Llama-3.1-8B-Instruct")
-API_TOKEN = HF_TOKEN
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
+MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+if HF_TOKEN is None:
+    raise ValueError("HF_TOKEN environment variable is required")
 
 # ---------------------------------------------------------------------------
 # Local imports — direct Python integration, no HTTP server needed
@@ -56,7 +58,7 @@ from wildfire_env.models import (
 # System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a 15×15 terrain grid.
+SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a 15x15 terrain grid.
 
 Each step you receive a JSON observation and must respond with a JSON action.
 
@@ -76,18 +78,18 @@ ACTION FORMAT (respond with valid JSON only, no markdown):
 }
 
 TARGET KINDS:
-  point    → {"point": {"row": R, "col": C}}
-  line     → {"waypoints": [{"row": R1, "col": C1}, {"row": R2, "col": C2}]}
-  area     → {"center": {"row": R, "col": C}, "radius": N}
-  structure → {"structure_id": "structure_1"}
+  point    -> {"point": {"row": R, "col": C}}
+  line     -> {"waypoints": [{"row": R1, "col": C1}, {"row": R2, "col": C2}]}
+  area     -> {"center": {"row": R, "col": C}, "radius": N}
+  structure -> {"structure_id": "structure_1"}
 
 RESOURCE CAPABILITIES (from action_guide in observation):
-  crews        → direct_attack | line_construction | point_protection | backfire | staging
-  engines      → direct_attack | wet_line | point_protection | backfire | staging
-  helicopters  → water_drop | point_protection | staging  (+drop_configuration: salvo/trail)
-  airtankers   → retardant_drop | staging                 (+drop_configuration: salvo/trail)
-  dozers       → line_construction | point_protection | staging
-  smokejumpers → direct_attack | line_construction | point_protection | staging
+  crews        -> direct_attack | line_construction | point_protection | backfire | staging
+  engines      -> direct_attack | wet_line | point_protection | backfire | staging
+  helicopters  -> water_drop | point_protection | staging  (+drop_configuration: salvo/trail)
+  airtankers   -> retardant_drop | staging                 (+drop_configuration: salvo/trail)
+  dozers       -> line_construction | point_protection | staging
+  smokejumpers -> direct_attack | line_construction | point_protection | staging
 
 STRATEGY:
 - Fire spreads every step — act immediately on available resources.
@@ -186,6 +188,16 @@ def _compute_score(obs: WildfireObservation) -> float:
     return _grade_episode(req).score
 
 
+def _action_str(action: WildfireAction) -> str:
+    """Compact string representation of an action for [STEP] output."""
+    if not action.assignments:
+        return "noop()"
+    parts = []
+    for a in action.assignments:
+        parts.append(f"{a.mission_type}({a.unit_id})")
+    return ",".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Main inference loop
 # ---------------------------------------------------------------------------
@@ -196,62 +208,67 @@ TASK_RUNS = [
     ("hard", DEFAULT_SEEDS["hard"]),
 ]
 
+ENV_NAME = "wildfire_env"
+
 
 def run_inference() -> dict[str, float]:
     """Run the LLM agent over all three tasks and return {task_id: score}."""
-    if not API_TOKEN:
-        print(
-            "ERROR: set HF_TOKEN before running inference.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     from openai import OpenAI
 
-    client = OpenAI(api_key=API_TOKEN, base_url=API_BASE_URL)
+    client = OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
     scores: dict[str, float] = {}
 
-    print(f"Model: {MODEL_NAME}")
-    print("=" * 60)
-
-    for episode, (task_id, seed) in enumerate(TASK_RUNS, start=1):
+    for task_id, seed in TASK_RUNS:
         env = WildfireEnvironment()
-        obs = env.reset(task_id=task_id, seed=seed)
-        print(f"\nTask [{episode}/{len(TASK_RUNS)}]: {task_id} (seed={seed})")
-        print(f"  Goal: {obs.goal}")
-        print(f"  Resources: {obs.resources_remaining}")
-
+        obs: WildfireObservation | None = None
         step = 0
-        while not obs.done:
-            action = _llm_action(client, obs)
-            obs = env.step(action)
-            step += 1
+        rewards: list[float] = []
+        success = False
+
+        print(f"[START] task={task_id} env={ENV_NAME} model={MODEL_NAME}")
+
+        try:
+            obs = env.reset(task_id=task_id, seed=seed)
+            while not obs.done:
+                action = _llm_action(client, obs)
+                obs = env.step(action)
+                step += 1
+                reward = round(obs.reward, 2)
+                rewards.append(reward)
+                error = obs.last_action_error or "null"
+
+                # [STEP] line
+                print(
+                    f"[STEP] step={step} "
+                    f"action={_action_str(action)} "
+                    f"reward={reward:.2f} "
+                    f"done={'true' if obs.done else 'false'} "
+                    f"error={error}"
+                )
+
+            score = _compute_score(obs)
+            scores[task_id] = score
+            success = score > 0.0
+        except Exception as exc:
+            print(f"    [Episode error: {exc}]", file=sys.stderr)
+            scores[task_id] = 0.0
+        finally:
+            env.close()
+            rewards_str = ",".join(f"{r:.2f}" for r in rewards)
             print(
-                f"  Step {obs.step:2d}: "
-                f"reward={obs.reward:+.3f}  "
-                f"burning={obs.burning_cells}  "
-                f"lost={obs.structures_lost}  "
-                f"assignments={len(action.assignments)}  "
-                f"error={obs.last_action_error or '-'}"
+                f"[END] success={'true' if success else 'false'} "
+                f"steps={step} "
+                f"rewards={rewards_str}"
             )
 
-        score = _compute_score(obs)
-        scores[task_id] = score
-        print(
-            f"  → Score: {score:.4f}  "
-            f"({step} steps, "
-            f"{obs.structures_remaining}/{obs.structures_remaining + obs.structures_lost} "
-            f"structures saved)"
-        )
-        env.close()
-
-    print("\n" + "=" * 60)
-    print("BASELINE SCORES:")
+    # Summary to stderr (not part of required format)
+    print("\n" + "=" * 60, file=sys.stderr)
+    print("BASELINE SCORES:", file=sys.stderr)
     for tid, sc in scores.items():
-        print(f"  {tid:6s}: {sc:.4f}")
+        print(f"  {tid:6s}: {sc:.4f}", file=sys.stderr)
     avg = sum(scores.values()) / max(1, len(scores))
-    print(f"  {'avg':6s}: {avg:.4f}")
-    print("=" * 60)
+    print(f"  {'avg':6s}: {avg:.4f}", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
 
     # Write to file for CI/evaluator consumption
     with open("baseline_scores.json", "w") as fh:
@@ -265,7 +282,7 @@ def run_inference() -> dict[str, float]:
             fh,
             indent=2,
         )
-    print(f"\nScores saved to baseline_scores.json")
+    print(f"\nScores saved to baseline_scores.json", file=sys.stderr)
 
     return scores
 

@@ -1043,7 +1043,10 @@ class FireSimulation:
         distance = max(2, min(SPOT_DISTANCE_CAP, distance))
         wind_rad = math.radians(st.wind_direction)
 
-        tr = int(src_r + distance * math.cos(wind_rad))
+        # Wind direction is meteorological (direction wind comes FROM).
+        # Embers travel downwind, so negate to get the "blowing TO" vector,
+        # matching the ambient wind convention: vx = sin(dir), vy = -cos(dir).
+        tr = int(src_r - distance * math.cos(wind_rad))
         tc = int(src_c + distance * math.sin(wind_rad))
 
         # Crosswind spread increases with travel distance.

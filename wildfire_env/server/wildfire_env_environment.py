@@ -180,6 +180,7 @@ class WildfireEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self):
+        super().__init__()
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._task_order = list(DIFFICULTY_SPECS.keys())
         self._task_cursor = 0
@@ -1379,7 +1380,7 @@ class WildfireEnvironment(Environment):
 
         return events, reward_delta
 
-    def step(self, action: WildfireAction) -> WildfireObservation:  # type: ignore[override]
+    def step(self, action: WildfireAction, timeout_s: float | None = None, **kwargs) -> WildfireObservation:
         """
         Queue one or more resource assignments, advance logistics and fire
         dynamics by one tick, and return the resulting observation.

@@ -593,6 +593,7 @@ def _place_water(size: int, num_bodies: int, body_size: int,
 
     for center_flat in centers:
         cr, cc = divmod(int(center_flat), size)
+        remaining = body_size  # per-body budget
         # Place a cluster around the center
         for dr in range(-1, 2):
             for dc in range(-1, 2):
@@ -600,8 +601,8 @@ def _place_water(size: int, num_bodies: int, body_size: int,
                 if 0 <= nr < size and 0 <= nc < size:
                     if rng.random() < 0.6 or (dr == 0 and dc == 0):
                         is_water[nr, nc] = True
-                        body_size -= 1
-                        if body_size <= 0:
+                        remaining -= 1
+                        if remaining <= 0:
                             break
 
     return is_water

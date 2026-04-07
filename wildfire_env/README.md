@@ -259,12 +259,6 @@ Weather conditions (temperature, humidity, wind) are observable but do not direc
 
 Run the LLM agent:
 ```bash
-OPENAI_API_KEY=sk-... python inference.py
-```
-
-Compatible token-based setup:
-
-```bash
 HF_TOKEN=hf_or_provider_token API_BASE_URL=https://your-endpoint/v1 MODEL_NAME=your-model python inference.py
 ```
 
