@@ -7,7 +7,7 @@
     },
     {
       "task_id": "medium",
-      "seed": 34
+      "seed": 67
     },
     {
       "task_id": "hard",
@@ -16,8 +16,8 @@
   ],
   "scores": {
     "easy": 0.995,
-    "medium": 0.9384,
-    "hard": 0.0148
+    "medium": 0.7954,
+    "hard": 0.1027
   },
-  "average": 0.6494
+  "average": 0.631
 }

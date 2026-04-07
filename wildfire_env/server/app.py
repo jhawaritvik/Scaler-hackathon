@@ -93,6 +93,8 @@ def _build_task_definitions() -> dict[str, dict]:
                 f"Ignitions: {spec.ignitions_step0[0]}-{spec.ignitions_step0[1]} at step 0"
                 + (f" + {spec.delayed_ignitions[0]}-{spec.delayed_ignitions[1]} delayed"
                    if spec.delayed_ignitions[1] > 0 else "")
+                + (f". Warmup: {spec.warmup_steps[0]}-{spec.warmup_steps[1]} step(s)"
+                   if spec.warmup_steps[1] > 0 else "")
                 + f". Structures: {spec.num_structures[0]}-{spec.num_structures[1]} (max priority {spec.max_priority})."
             ),
             "goal": TASK_GOALS.get(task_id, ""),
@@ -103,6 +105,7 @@ def _build_task_definitions() -> dict[str, dict]:
                 "wind_speed_kmh": list(spec.wind_speed),
                 "ignitions_step0": list(spec.ignitions_step0),
                 "delayed_ignitions": list(spec.delayed_ignitions),
+                "warmup_steps": list(spec.warmup_steps),
                 "num_structures": list(spec.num_structures),
                 "max_priority": spec.max_priority,
                 "crews": list(spec.crews),

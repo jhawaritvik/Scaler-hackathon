@@ -74,7 +74,7 @@ Three graded tasks are included:
 
 - `easy`: single ignition, better moisture, more water, lower-value assets
 - `medium`: hotter, drier, delayed re-ignition, and a tighter response window
-- `hard`: multi-ignition, wind-driven, scarce resources, highest-value assets
+- `hard`: multi-ignition, already-active, wind-driven, scarce resources, highest-value assets
 
 Each task has a deterministic grader that returns `0.0` to `1.0` using:
 
@@ -131,8 +131,8 @@ Deterministic heuristic baseline via `/baseline`:
 
 - `easy`: `0.9950`
 - `medium`: `0.7954`
-- `hard`: `0.0148`
-- average: `0.6017`
+- `hard`: `0.1027`
+- average: `0.6310`
 
 LLM baseline script:
 

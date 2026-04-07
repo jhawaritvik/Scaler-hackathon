@@ -565,22 +565,38 @@ class WildfireEnvironment(Environment):
         self._outposts = terrain.outposts
 
         self._sim = FireSimulation(terrain)
-        self._sim.reset()
+        sim_state = self._sim.reset()
+
+        warmup_steps = max(0, int(getattr(config, "warmup_steps", 0)))
+        executed_warmup = 0
+        for _ in range(warmup_steps):
+            if sim_state.done:
+                break
+            sim_state = self._sim.tick()
+            executed_warmup += 1
 
         eid = episode_id or str(uuid4())
-        self._state = State(episode_id=eid, step_count=0)
+        self._state = State(episode_id=eid, step_count=sim_state.step)
         self._resource_totals = {**self._empty_resource_counts(), **dict(config.resources)}
         self._fleet_units = build_initial_fleet(
             config.resources, config.grid_size, outposts=config.outposts,
         )
-        self._last_action_summary = (
-            f"started task '{self._task_id}' (seed={seed}) with a "
-            f"{SIMULATION_STEP_MINUTES:.0f}-minute incident timestep"
-        )
+        if executed_warmup > 0:
+            self._last_action_summary = (
+                f"started task '{self._task_id}' (seed={seed}) after "
+                f"{executed_warmup} warmup step(s) "
+                f"({executed_warmup * SIMULATION_STEP_MINUTES:.0f} incident minutes) "
+                f"with a {SIMULATION_STEP_MINUTES:.0f}-minute incident timestep"
+            )
+        else:
+            self._last_action_summary = (
+                f"started task '{self._task_id}' (seed={seed}) with a "
+                f"{SIMULATION_STEP_MINUTES:.0f}-minute incident timestep"
+            )
         self._last_action_error = None
         self._total_reward = 0.0
 
-        return self._build_observation(reward=0.0, done=False)
+        return self._build_observation(reward=0.0, done=sim_state.done)
 
     def _get_unit_by_id(self, unit_id: str) -> FleetUnit | None:
         for unit in self._fleet_units:

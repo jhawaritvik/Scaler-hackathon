@@ -177,6 +177,7 @@ class TerrainConfig:
     outposts: list = field(default_factory=list)
 
     # Episode
+    warmup_steps: int = 0
     max_steps: int = 20
 
 
@@ -228,6 +229,7 @@ class DifficultySpec:
     num_air_bases: tuple[int, int] = (1, 1)
 
     # Episode
+    warmup_steps: tuple[int, int] = (0, 0)
     max_steps: int = 20
     grid_size: int = GRID_SIZE
 
@@ -292,6 +294,7 @@ def draw_scenario(spec: DifficultySpec, seed: int) -> TerrainConfig:
     # --- Fire (ignitions) ---
     n_step0 = _draw_int(fire_rng, *spec.ignitions_step0)
     n_delayed = _draw_int(fire_rng, *spec.delayed_ignitions)
+    warmup_steps = _draw_int(fire_rng, *spec.warmup_steps)
 
     ignition_points: list[dict] = [{"step": 0} for _ in range(n_step0)]
     for _ in range(n_delayed):
@@ -338,6 +341,7 @@ def draw_scenario(spec: DifficultySpec, seed: int) -> TerrainConfig:
         humidity_swing=hum_swing,
         resources=resource_counts,
         outposts=outposts,
+        warmup_steps=warmup_steps,
         max_steps=spec.max_steps,
     )
 
@@ -832,6 +836,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         smokejumpers=(0, 1),
         num_ground_outposts=(2, 3),
         num_air_bases=(1, 1),
+        warmup_steps=(0, 0),
     ),
     "medium": DifficultySpec(
         elevation_roughness=(0.4, 0.6),
@@ -857,6 +862,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         smokejumpers=(0, 1),
         num_ground_outposts=(2, 3),
         num_air_bases=(1, 2),
+        warmup_steps=(0, 0),
         max_steps=15,
     ),
     "hard": DifficultySpec(
@@ -872,7 +878,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         humidity_swing=(0.18, 0.25),
         ignitions_step0=(2, 3),
         delayed_ignitions=(1, 3),
-        delayed_step_range=(3, 12),
+        delayed_step_range=(2, 6),
         num_structures=(4, 6),
         max_priority=3,
         crews=(1, 3),
@@ -883,6 +889,7 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         smokejumpers=(0, 0),
         num_ground_outposts=(1, 2),
         num_air_bases=(1, 1),
+        warmup_steps=(2, 2),
     ),
 }
 
