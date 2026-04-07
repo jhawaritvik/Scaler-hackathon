@@ -1,0 +1,23 @@
+{
+  "model": "heuristic (deterministic)",
+  "task_runs": [
+    {
+      "task_id": "easy",
+      "seed": 42
+    },
+    {
+      "task_id": "medium",
+      "seed": 34
+    },
+    {
+      "task_id": "hard",
+      "seed": 12
+    }
+  ],
+  "scores": {
+    "easy": 0.995,
+    "medium": 0.9384,
+    "hard": 0.0148
+  },
+  "average": 0.6494
+}
