@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 """
-Wildfire Environment — LLM Baseline Inference Script
+Wildfire Environment - LLM baseline inference script.
 
 Uses the OpenAI API client (OpenAI-compatible transport) to run an LLM agent
 against all three wildfire tasks (easy, medium, hard) and reports final
 grader scores.
 
 Required environment variable:
-    HF_TOKEN         — Hugging Face API token
+    HF_TOKEN
 
 Optional environment variables:
-    API_BASE_URL     — HF inference endpoint (default: https://router.huggingface.co/v1/)
-    MODEL_NAME       — Model identifier (default: meta-llama/Llama-3.1-8B-Instruct)
-
-Usage:
-    python inference.py
-
-The script uses direct Python integration — no running server required.
-Scores are written to stdout and also saved to baseline_scores.json.
+    API_BASE_URL     (default: https://router.huggingface.co/v1/)
+    MODEL_NAME       (default: meta-llama/Llama-3.1-8B-Instruct)
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -37,7 +33,7 @@ if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
 # ---------------------------------------------------------------------------
-# Local imports — direct Python integration, no HTTP server needed
+# Local imports - direct Python integration, no HTTP server needed
 # ---------------------------------------------------------------------------
 
 _repo_root = os.path.dirname(os.path.abspath(__file__))
@@ -79,21 +75,21 @@ ACTION FORMAT (respond with valid JSON only, no markdown):
 }
 
 TARGET KINDS:
-  point    -> {"point": {"row": R, "col": C}}
-  line     -> {"waypoints": [{"row": R1, "col": C1}, {"row": R2, "col": C2}]}
-  area     -> {"center": {"row": R, "col": C}, "radius": N}
+  point     -> {"point": {"row": R, "col": C}}
+  line      -> {"waypoints": [{"row": R1, "col": C1}, {"row": R2, "col": C2}]}
+  area      -> {"center": {"row": R, "col": C}, "radius": N}
   structure -> {"structure_id": "structure_1"}
 
 RESOURCE CAPABILITIES (from action_guide in observation):
   crews        -> direct_attack | line_construction | point_protection | backfire | staging
   engines      -> direct_attack | wet_line | point_protection | backfire | staging
-  helicopters  -> water_drop | point_protection | staging  (+drop_configuration: salvo/trail)
-  airtankers   -> retardant_drop | staging                 (+drop_configuration: salvo/trail)
+  helicopters  -> water_drop | point_protection | staging (+drop_configuration: salvo/trail)
+  airtankers   -> retardant_drop | staging (+drop_configuration: salvo/trail)
   dozers       -> line_construction | point_protection | staging
   smokejumpers -> direct_attack | line_construction | point_protection | staging
 
 STRATEGY:
-- Fire spreads every step — act immediately on available resources.
+- Fire spreads every step - act immediately on available resources.
 - Use action_guide to see which units are available and their valid missions.
 - Protect high-priority structures (priority 3 > 2 > 1) first.
 - Dozers build permanent firebreaks; engines create faster but temporary wet lines.
@@ -106,7 +102,7 @@ Return ONLY valid JSON. No explanation, no code blocks."""
 
 
 # ---------------------------------------------------------------------------
-# LLM interaction helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _build_user_prompt(obs: WildfireObservation) -> str:
@@ -150,6 +146,14 @@ def _build_user_prompt(obs: WildfireObservation) -> str:
     )
 
 
+def _single_line(value: str | None, default: str = "null") -> str:
+    """Keep structured log fields on one line."""
+    if value is None:
+        return default
+    compact = " ".join(str(value).split())
+    return compact if compact else default
+
+
 def _llm_action(client, obs: WildfireObservation) -> WildfireAction:
     """Ask the LLM for an action and parse the JSON response."""
     user_content = (
@@ -171,8 +175,7 @@ def _llm_action(client, obs: WildfireObservation) -> WildfireAction:
         raw = response.choices[0].message.content or "{}"
         data = json.loads(raw)
         return WildfireAction(**data)
-    except Exception as exc:
-        print(f"    [LLM error: {exc}] — submitting no-op action", file=sys.stderr)
+    except Exception:
         return WildfireAction()
 
 
@@ -193,10 +196,7 @@ def _action_str(action: WildfireAction) -> str:
     """Compact string representation of an action for [STEP] output."""
     if not action.assignments:
         return "noop()"
-    parts = []
-    for a in action.assignments:
-        parts.append(f"{a.mission_type}({a.unit_id})")
-    return ",".join(parts)
+    return ",".join(f"{a.mission_type}({a.unit_id})" for a in action.assignments)
 
 
 # ---------------------------------------------------------------------------
@@ -236,12 +236,11 @@ def run_inference() -> dict[str, float]:
                 step += 1
                 reward = round(obs.reward, 2)
                 rewards.append(reward)
-                error = obs.last_action_error or "null"
+                error = _single_line(obs.last_action_error)
 
-                # [STEP] line
                 print(
                     f"[STEP] step={step} "
-                    f"action={_action_str(action)} "
+                    f"action={_single_line(_action_str(action), default='noop()')} "
                     f"reward={reward:.2f} "
                     f"done={'true' if obs.done else 'false'} "
                     f"error={error}"
@@ -250,8 +249,7 @@ def run_inference() -> dict[str, float]:
             score = _compute_score(obs)
             scores[task_id] = score
             success = score > SCORE_EPS
-        except Exception as exc:
-            print(f"    [Episode error: {exc}]", file=sys.stderr)
+        except Exception:
             scores[task_id] = SCORE_EPS
         finally:
             env.close()
@@ -262,28 +260,22 @@ def run_inference() -> dict[str, float]:
                 f"rewards={rewards_str}"
             )
 
-    # Summary to stderr (not part of required format)
-    print("\n" + "=" * 60, file=sys.stderr)
-    print("BASELINE SCORES:", file=sys.stderr)
-    for tid, sc in scores.items():
-        print(f"  {tid:6s}: {sc:.4f}", file=sys.stderr)
     avg = sum(scores.values()) / max(1, len(scores))
-    print(f"  {'avg':6s}: {avg:.4f}", file=sys.stderr)
-    print("=" * 60, file=sys.stderr)
 
-    # Write to file for CI/evaluator consumption
-    with open("baseline_scores.json", "w") as fh:
+    with open("baseline_scores.json", "w", encoding="utf-8") as fh:
         json.dump(
             {
                 "model": MODEL_NAME,
-                "task_runs": [{"task_id": task_id, "seed": seed} for task_id, seed in TASK_RUNS],
+                "task_runs": [
+                    {"task_id": task_id, "seed": seed}
+                    for task_id, seed in TASK_RUNS
+                ],
                 "scores": scores,
                 "average": round(avg, 4),
             },
             fh,
             indent=2,
         )
-    print(f"\nScores saved to baseline_scores.json", file=sys.stderr)
 
     return scores
 
