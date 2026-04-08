@@ -197,6 +197,13 @@ class WildfireEnvironment(Environment):
         self._last_action_error: str | None = None
         self._total_reward = 0.0
 
+    def close(self) -> None:
+        """Release simulation resources."""
+        self._sim = None
+        self._fleet_units.clear()
+        self._structures_by_id.clear()
+        self._outposts.clear()
+
     def _select_task_id(self, task_id: str | None = None) -> str:
         if task_id and task_id in DIFFICULTY_SPECS:
             return task_id

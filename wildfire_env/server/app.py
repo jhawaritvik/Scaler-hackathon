@@ -203,7 +203,9 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
     else:
         efficiency_score = 0.0
 
-    score = min(1.0, max(0.0,
+    # Clamp strictly within (0, 1) — validator requires score ∈ (0.0, 1.0)
+    _SCORE_EPS = 1e-4
+    score = max(_SCORE_EPS, min(1.0 - _SCORE_EPS,
         structure_score * 0.60
         + area_score * 0.30
         + efficiency_score * 0.10
