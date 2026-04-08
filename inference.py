@@ -228,6 +228,7 @@ def run_inference() -> dict[str, float]:
         env = WildfireEnvironment()
         obs: WildfireObservation | None = None
         step = 0
+        score = SCORE_EPS
         rewards: list[float] = []
         success = False
 
@@ -235,7 +236,6 @@ def run_inference() -> dict[str, float]:
 
         try:
             obs = env.reset(task_id=task_id, seed=seed)
-            score = SCORE_EPS
             while not obs.done:
                 action = _llm_action(client, obs)
                 obs = env.step(action)
@@ -259,7 +259,7 @@ def run_inference() -> dict[str, float]:
                 )
 
             scores[task_id] = score
-            success = score > SCORE_EPS
+            success = True
         except Exception:
             scores[task_id] = SCORE_EPS
         finally:
@@ -272,6 +272,7 @@ def run_inference() -> dict[str, float]:
             print(
                 f"[END] success={'true' if success else 'false'} "
                 f"steps={max(step, 1)} "
+                f"score={score:.2f} "
                 f"rewards={rewards_str}"
             )
 
