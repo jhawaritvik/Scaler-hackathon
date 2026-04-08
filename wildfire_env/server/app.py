@@ -157,6 +157,14 @@ class GraderResponse(BaseModel):
     description: str = ""
 
 
+_SCORE_EPS = 1e-4
+
+
+def _strict_open_unit_interval(value: float) -> float:
+    """Clamp a value strictly inside (0, 1) for validator compatibility."""
+    return max(_SCORE_EPS, min(1.0 - _SCORE_EPS, float(value)))
+
+
 def _grade_episode(req: GraderRequest) -> GraderResponse:
     """Compute a normalised 0.0–1.0 grader score from episode outcome data.
 
@@ -170,9 +178,18 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
     """
     if req.task_id not in DIFFICULTY_SPECS:
         return GraderResponse(
-            score=0.0,
+            score=_SCORE_EPS,
             task_id=req.task_id,
-            components={},
+            components={
+                "structure_component": _SCORE_EPS,
+                "area_component": _SCORE_EPS,
+                "efficiency_component": _SCORE_EPS,
+                "weights": {"structure": 0.60, "area": 0.30, "efficiency": 0.10},
+                "saved_priority": 0,
+                "total_priority": 1,
+                "cells_damaged": 0,
+                "total_burnable": 1,
+            },
             description=f"unknown task_id '{req.task_id}'",
         )
 
@@ -204,20 +221,22 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
         efficiency_score = 0.0
 
     # Clamp strictly within (0, 1) — validator requires score ∈ (0.0, 1.0)
-    _SCORE_EPS = 1e-4
-    score = max(_SCORE_EPS, min(1.0 - _SCORE_EPS,
+    score = _strict_open_unit_interval(
         structure_score * 0.60
         + area_score * 0.30
         + efficiency_score * 0.10
-    ))
+    )
+    structure_component = _strict_open_unit_interval(structure_score)
+    area_component = _strict_open_unit_interval(area_score)
+    efficiency_component = _strict_open_unit_interval(efficiency_score)
 
     return GraderResponse(
         score=round(score, 4),
         task_id=req.task_id,
         components={
-            "structure_score": round(structure_score, 4),
-            "area_score": round(area_score, 4),
-            "efficiency_score": round(efficiency_score, 4),
+            "structure_component": round(structure_component, 4),
+            "area_component": round(area_component, 4),
+            "efficiency_component": round(efficiency_component, 4),
             "weights": {"structure": 0.60, "area": 0.30, "efficiency": 0.10},
             "saved_priority": saved_priority,
             "total_priority": total_priority,

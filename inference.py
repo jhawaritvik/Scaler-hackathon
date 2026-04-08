@@ -31,6 +31,7 @@ import sys
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
+SCORE_EPS = 1e-4
 
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
@@ -248,10 +249,10 @@ def run_inference() -> dict[str, float]:
 
             score = _compute_score(obs)
             scores[task_id] = score
-            success = score > 0.0
+            success = score > SCORE_EPS
         except Exception as exc:
             print(f"    [Episode error: {exc}]", file=sys.stderr)
-            scores[task_id] = 0.0
+            scores[task_id] = SCORE_EPS
         finally:
             env.close()
             rewards_str = ",".join(f"{r:.2f}" for r in rewards)
