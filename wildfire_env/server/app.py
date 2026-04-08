@@ -157,7 +157,7 @@ class GraderResponse(BaseModel):
     description: str = ""
 
 
-_SCORE_EPS = 1e-4
+_SCORE_EPS = 0.01
 
 
 def _strict_open_unit_interval(value: float) -> float:

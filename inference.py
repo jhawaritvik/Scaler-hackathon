@@ -27,7 +27,7 @@ import sys
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
-SCORE_EPS = 1e-4
+SCORE_EPS = 0.01
 
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
@@ -179,6 +179,11 @@ def _llm_action(client, obs: WildfireObservation) -> WildfireAction:
         return WildfireAction()
 
 
+def _clamp_reward(value: float) -> float:
+    """Clamp a value strictly inside (0, 1) surviving 2-dp rounding."""
+    return max(0.01, min(0.99, float(value)))
+
+
 def _compute_score(obs: WildfireObservation) -> float:
     """Compute the grader score from the final observation."""
     req = GraderRequest(
@@ -230,11 +235,18 @@ def run_inference() -> dict[str, float]:
 
         try:
             obs = env.reset(task_id=task_id, seed=seed)
+            score = SCORE_EPS
             while not obs.done:
                 action = _llm_action(client, obs)
                 obs = env.step(action)
                 step += 1
-                reward = round(obs.reward, 2)
+
+                if obs.done:
+                    score = _compute_score(obs)
+                    reward = round(_clamp_reward(score), 2)
+                else:
+                    reward = round(_clamp_reward(obs.reward), 2)
+
                 rewards.append(reward)
                 error = _single_line(obs.last_action_error)
 
@@ -246,7 +258,6 @@ def run_inference() -> dict[str, float]:
                     f"error={error}"
                 )
 
-            score = _compute_score(obs)
             scores[task_id] = score
             success = score > SCORE_EPS
         except Exception:
