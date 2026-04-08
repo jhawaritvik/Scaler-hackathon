@@ -151,7 +151,7 @@ class GraderRequest(BaseModel):
 
 
 class GraderResponse(BaseModel):
-    score: float = Field(..., ge=0.0, le=1.0, description="Final episode score 0.0–1.0")
+    score: float = Field(..., gt=0.0, lt=1.0, description="Final episode score strictly within (0, 1)")
     task_id: str
     components: dict = Field(default_factory=dict)
     description: str = ""
