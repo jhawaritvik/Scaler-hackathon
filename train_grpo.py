@@ -451,39 +451,49 @@ def _logprobs_for_batch(
     """
     Per-token completion logprobs, processed one sequence at a time.
 
-    Memory strategy: run the base transformer (model.model) WITHOUT the
-    lm_head to get hidden states (1, L, hidden_dim), then slice to only the
-    c completion positions, THEN apply lm_head to the tiny (c, hidden_dim)
-    slice.  This avoids ever materialising the full (L, vocab_size) logits
-    tensor — only (c, vocab_size) is created.
+    Memory strategy: call the bare transformer backbone WITHOUT lm_head to get
+    hidden states (1, L, hidden_dim), slice to only the c completion positions,
+    then apply lm_head to (c, hidden_dim) only.  This avoids ever materialising
+    the full (L, vocab_size) logits tensor.
 
-    For Qwen3-1.7B (V=151936, hidden=2048) at L≈600, c≈100 in fp16:
-      - Old peak: L × V × 2 B  ≈  183 MB per sequence
-      - New peak: c × V × 2 B  ≈   31 MB per sequence  (~6× reduction)
+    PEFT/Unsloth model hierarchy:
+      model               PeftModelForCausalLM   calling → logits
+      model.model         LoraModel              calling → logits (delegates to CausalLM)
+      get_base_model()    Qwen3ForCausalLM       calling → logits
+      get_base_model().model    Qwen3Model       calling → hidden states ✓
+      get_base_model().lm_head  Linear           vocab projection ✓
 
-    Both the policy pass (with grad) and the reference pass
-    (model.disable_adapter() + torch.no_grad()) go through this function,
-    so both benefit from the same reduction.
+    Using get_base_model() avoids hard-coding the nesting depth.  LoRA layers
+    are injected in-place into Qwen3Model.layers, so they are still active here
+    and are correctly disabled by the model.disable_adapter() context for the
+    reference pass.
+
+    For Qwen3-1.7B (V=151936, H=2048) at L≈600, c≈100 in fp16:
+      Old: L × V × 2 B ≈ 183 MB per sequence
+      New: c × V × 2 B ≈  30 MB per sequence  (~6× reduction)
     """
+    # Resolve backbone and lm_head once for the whole batch.
+    # get_base_model() (PEFT API) returns Qwen3ForCausalLM.
+    # Fall back to model itself if not a PEFT wrapper.
+    causal_lm = model.get_base_model() if hasattr(model, "get_base_model") else model
+    backbone  = causal_lm.model    # Qwen3Model — returns hidden states, no vocab proj
+    lm_head   = causal_lm.lm_head  # Linear(hidden_dim → vocab_size)
+
     result = []
     for seq, p, c in zip(sequences, prompt_lens, comp_lens):
         ids  = torch.tensor([seq], dtype=torch.long, device=device)
         attn = torch.ones(1, len(seq), dtype=torch.long, device=device)
 
-        # ── Step 1: base transformer forward — no lm_head ──────────────────
-        # model.model is the bare transformer stack; lm_head is a separate
-        # Linear layer applied afterwards.  Skipping it here keeps the full
-        # (1, L, hidden_dim) hidden state in memory rather than the much
-        # larger (1, L, vocab_size) logit tensor.
-        hidden = model.model(ids, attention_mask=attn)[0]        # (1, L, H)
+        # ── Step 1: backbone forward — hidden states only, no lm_head ───────
+        hidden = backbone(ids, attention_mask=attn)[0]           # (1, L, H)
 
-        # ── Step 2: slice to completion positions only ──────────────────────
-        # Causal shift: hidden[p-1] is the state that predicts token at p.
+        # ── Step 2: slice to completion positions only ───────────────────────
+        # Causal shift: hidden[p-1] predicts the token at position p.
         comp_hidden = hidden[0, p - 1 : p - 1 + c]              # (c, H)
-        del hidden                                               # free (1, L, H)
+        del hidden                                               # free (1, L, H) now
 
-        # ── Step 3: apply lm_head to the small slice ────────────────────────
-        comp_logits = model.lm_head(comp_hidden)                 # (c, V)
+        # ── Step 3: apply lm_head to the small slice only ───────────────────
+        comp_logits = lm_head(comp_hidden)                       # (c, V)
 
         comp_ids = torch.tensor(seq[p : p + c], dtype=torch.long, device=device)
         lps = F.log_softmax(comp_logits, dim=-1)[
