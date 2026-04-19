@@ -2,14 +2,22 @@
 """
 Multi-turn GRPO training pipeline for the wildfire incident-command environment.
 
-Expected peak VRAM on a single T4 (16 GB):
-  - Qwen3-4B base model (4-bit NF4 QLoRA):    ~2.5 GB
-  - LoRA adapters (rank=16, attn only):         ~0.1 GB
+Target hardware:
+  - T4 (16 GB, Colab free tier): use Qwen/Qwen3-1.7B  ← default model_name
+  - On-site / A100 (40+ GB):     use Qwen/Qwen3-4B (change model_name in Config)
+
+Expected peak VRAM for Qwen3-1.7B on T4:
+  - Base model (4-bit NF4 QLoRA):              ~1.1 GB
+  - LoRA adapters (rank=16, attn only):         ~0.05 GB
   - Gradient-checkpointed backward pass
-    (one seq at a time in _logprobs_for_batch): ~3-5 GB
-  - AdamW 8-bit optimizer states:               ~0.4 GB
+    (one seq at a time in _logprobs_for_batch): ~2-4 GB
+  - AdamW 8-bit optimizer states:               ~0.2 GB
   - XGrammar compiled grammar + bitmask cache:  ~0.2 GB
-  Total (conservative):                         ~8-10 GB  ← fits T4 16 GB
+  Total (conservative):                         ~5-7 GB  ← comfortable on T4
+
+Expected peak VRAM for Qwen3-4B on A100 (40 GB):
+  - Base model (4-bit NF4 QLoRA):              ~2.5 GB
+  - Same breakdown above scaled up:            ~10-14 GB total
 
 Architecture notes:
   - fast_inference=False is required so model.generate() accepts HF LogitsProcessors.
@@ -66,7 +74,7 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 
 @dataclass
 class Config:
-    model_name: str = "Qwen/Qwen3-4B"
+    model_name: str = "Qwen/Qwen3-1.7B"
     task_curriculum: tuple = (("easy", 0, 10), ("medium", 10, 30))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
