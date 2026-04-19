@@ -75,7 +75,7 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 @dataclass
 class Config:
     model_name: str = "Qwen/Qwen3-1.7B"
-    task_curriculum: tuple = (("easy", 0, 10), ("medium", 10, 30))
+    task_curriculum: tuple = (("medium", 0, 20), ("hard", 20, 30))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
         "medium": [67, 101, 201, 301],
