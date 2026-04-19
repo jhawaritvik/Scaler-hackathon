@@ -62,6 +62,7 @@ def load_model_for_eval(adapter_path: str | None, config: Config, device: torch.
     If adapter_path is None, evaluates the unmodified base model
     (zero-shot baseline — should match inference.py scores within ~0.05).
     """
+    import unsloth  # noqa: F401, PLC0415
     from unsloth import FastLanguageModel  # noqa: PLC0415
 
     print(f"Loading base model {config.model_name} …")

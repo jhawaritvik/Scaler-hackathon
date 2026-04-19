@@ -11,6 +11,10 @@ Usage:
 from __future__ import annotations
 
 import os
+
+# Must be set before torch is imported — reduces CUDA memory fragmentation.
+os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
+
 import sys
 import time
 

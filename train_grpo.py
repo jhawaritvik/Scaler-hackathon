@@ -6,10 +6,10 @@ Expected peak VRAM on a single T4 (16 GB):
   - Qwen3-4B base model (4-bit NF4 QLoRA):    ~2.5 GB
   - LoRA adapters (rank=16, attn only):         ~0.1 GB
   - Gradient-checkpointed backward pass
-    (micro_batch=4 seqs, ~600 tok each):        ~5-7 GB
+    (one seq at a time in _logprobs_for_batch): ~3-5 GB
   - AdamW 8-bit optimizer states:               ~0.4 GB
   - XGrammar compiled grammar + bitmask cache:  ~0.2 GB
-  Total (conservative):                        ~10-12 GB  ← fits T4 16 GB
+  Total (conservative):                         ~8-10 GB  ← fits T4 16 GB
 
 Architecture notes:
   - fast_inference=False is required so model.generate() accepts HF LogitsProcessors.
@@ -27,6 +27,10 @@ from __future__ import annotations
 
 import json
 import os
+
+# Reduce CUDA memory fragmentation — must be set before torch is imported.
+os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
+
 import random
 import sys
 import time
@@ -318,6 +322,7 @@ def rollout_episode(
         )
         completion_ids = gen_out[0, prompt_len:].tolist()
         comp_len = len(completion_ids)
+        del gen_out  # free KV-cache storage held by the output tensor
 
         # Parse action (should be ~100% with XGrammar; track for diagnostics)
         raw_text = tokenizer.decode(completion_ids, skip_special_tokens=True)
@@ -336,6 +341,7 @@ def rollout_episode(
         # Skip steps where generation produced nothing (degenerate edge case).
         if comp_len > 0:
             full_seq = prompt_ids_t[0].tolist() + completion_ids
+            del prompt_ids_t  # free prompt tensor before the extra forward pass
             old_lps = _compute_old_logprobs(model, full_seq, prompt_len, comp_len, device)
             steps.append(StepData(
                 full_seq=full_seq,
@@ -435,31 +441,34 @@ def _logprobs_for_batch(
     device: torch.device,
 ) -> list[torch.Tensor]:
     """
-    One batched forward pass → per-token completion logprobs.
+    Per-token completion logprobs, processed one sequence at a time.
 
-    Returns a list of (comp_len,) tensors that carry gradients through
-    the current policy parameters.
+    Memory strategy: after each forward pass we immediately `.clone()` only the
+    completion-position slice (shape (c, V)) and `del logits` to release the
+    full (L, V) logits tensor.  PyTorch's autograd can still compute gradients
+    through `clone` (it's a differentiable identity), so we break the storage
+    reference to the large tensor without breaking the computation graph.
+
+    For Qwen3-4B (V=151936) at L≈600 in fp16:
+      - Old batched peak: B × L × V × 2 B  ≈  548 MB for B=2
+      - New sequential peak: L × V × 2 B   ≈  183 MB, → c × V × 2 B ≈ 61 MB
     """
-    B = len(sequences)
-    max_len = max(len(s) for s in sequences)
-    padded = torch.zeros(B, max_len, dtype=torch.long, device=device)
-    attn   = torch.zeros(B, max_len, dtype=torch.long, device=device)
-    for i, seq in enumerate(sequences):
-        t = torch.tensor(seq, dtype=torch.long, device=device)
-        padded[i, :len(seq)] = t
-        attn[i, :len(seq)] = 1
-
-    logits = model(padded, attention_mask=attn).logits          # (B, L, V)
-    log_probs = F.log_softmax(logits, dim=-1)                   # (B, L, V)
-
     result = []
-    for i in range(B):
-        p = prompt_lens[i]
-        c = comp_lens[i]
-        comp_ids = torch.tensor(sequences[i][p : p + c], dtype=torch.long, device=device)
-        # Causal shift: logit at p-1 predicts token at p.
-        comp_lp = log_probs[i, p - 1 : p - 1 + c, :]                           # (C, V)
-        lps = comp_lp[torch.arange(c, device=device), comp_ids]                 # (C,)
+    for seq, p, c in zip(sequences, prompt_lens, comp_lens):
+        ids = torch.tensor([seq], dtype=torch.long, device=device)
+        attn = torch.ones(1, len(seq), dtype=torch.long, device=device)
+        logits = model(ids, attention_mask=attn).logits[0]      # (L, V)
+
+        # Causal shift: logit at p-1 predicts the token at position p.
+        # Clone before del to give the slice its own storage while keeping
+        # the computation graph intact (del logits is then safe).
+        comp_logits = logits[p - 1 : p - 1 + c].clone()        # (c, V) own storage
+        del logits                                               # free (L, V) tensor now
+
+        comp_ids = torch.tensor(seq[p : p + c], dtype=torch.long, device=device)
+        lps = F.log_softmax(comp_logits, dim=-1)[
+            torch.arange(c, device=device), comp_ids
+        ]                                                        # (c,)
         result.append(lps)
     return result
 
@@ -500,6 +509,7 @@ def grpo_update(
     for _epoch in range(config.inner_epochs):
         random.shuffle(all_steps)
         optimizer.zero_grad()
+        torch.cuda.empty_cache()  # free fragments from previous epoch / rollout
         epoch_loss = 0.0
 
         for chunk_start in range(0, len(all_steps), config.micro_batch_size):
@@ -614,8 +624,10 @@ def train(config: Config):
     log = make_logger(config)
 
     # ── Load model ──────────────────────────────────────────────────────────
-    # Lazy import: unsloth requires CUDA + GPU drivers; defer until here so
-    # the rest of the module (env, math, tests) is importable on CPU machines.
+    # Unsloth must be imported before transformers to apply all kernel patches.
+    # We import it here (lazily) so the module is importable on CPU-only machines
+    # for testing, but on GPU it patches transformers correctly at load time.
+    import unsloth  # noqa: F401, PLC0415 — patches transformers before model load
     from unsloth import FastLanguageModel  # noqa: PLC0415
 
     print(f"Loading {config.model_name} (4-bit QLoRA) …")
@@ -692,6 +704,11 @@ def train(config: Config):
             print("  ⚠  reward std=0 — all trajectories tied; gradient will be zero")
 
         # ── Update phase ────────────────────────────────────────────────────
+        # Release cached GPU memory that accumulated during rollout (KV-cache
+        # fragments, intermediate tensors from generate()) before starting the
+        # backward-pass-heavy update step.
+        torch.cuda.empty_cache()
+
         t1 = time.time()
         upd = grpo_update(model, optimizer, trajectories, advantages, config, device)
         update_secs = time.time() - t1
