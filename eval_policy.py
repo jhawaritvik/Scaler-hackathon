@@ -40,7 +40,6 @@ from train_grpo import (
 )
 
 import xgrammar as xgr
-from unsloth import FastLanguageModel
 
 
 # Fixed seeds: same set across all runs so eval numbers are reproducible.
@@ -63,6 +62,8 @@ def load_model_for_eval(adapter_path: str | None, config: Config, device: torch.
     If adapter_path is None, evaluates the unmodified base model
     (zero-shot baseline — should match inference.py scores within ~0.05).
     """
+    from unsloth import FastLanguageModel  # noqa: PLC0415
+
     print(f"Loading base model {config.model_name} …")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model_name,

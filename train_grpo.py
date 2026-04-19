@@ -48,9 +48,12 @@ from wildfire_env.server.app import GraderRequest, _grade_episode
 from wildfire_env.models import WildfireAction, WildfireObservation
 
 # Third-party — install: pip install unsloth xgrammar bitsandbytes
+# xgrammar is imported at module level (lightweight, no CUDA required).
+# unsloth and bitsandbytes are imported lazily inside load_model() so that
+# the rest of the module (env, advantages, loss math) is importable on CPU
+# environments without a GPU/unsloth installation.
 import xgrammar as xgr
 from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
-from unsloth import FastLanguageModel
 
 
 # ---------------------------------------------------------------------------
@@ -611,6 +614,10 @@ def train(config: Config):
     log = make_logger(config)
 
     # ── Load model ──────────────────────────────────────────────────────────
+    # Lazy import: unsloth requires CUDA + GPU drivers; defer until here so
+    # the rest of the module (env, math, tests) is importable on CPU machines.
+    from unsloth import FastLanguageModel  # noqa: PLC0415
+
     print(f"Loading {config.model_name} (4-bit QLoRA) …")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model_name,
