@@ -451,27 +451,39 @@ def _logprobs_for_batch(
     """
     Per-token completion logprobs, processed one sequence at a time.
 
-    Memory strategy: after each forward pass we immediately `.clone()` only the
-    completion-position slice (shape (c, V)) and `del logits` to release the
-    full (L, V) logits tensor.  PyTorch's autograd can still compute gradients
-    through `clone` (it's a differentiable identity), so we break the storage
-    reference to the large tensor without breaking the computation graph.
+    Memory strategy: run the base transformer (model.model) WITHOUT the
+    lm_head to get hidden states (1, L, hidden_dim), then slice to only the
+    c completion positions, THEN apply lm_head to the tiny (c, hidden_dim)
+    slice.  This avoids ever materialising the full (L, vocab_size) logits
+    tensor — only (c, vocab_size) is created.
 
-    For Qwen3-4B (V=151936) at L≈600 in fp16:
-      - Old batched peak: B × L × V × 2 B  ≈  548 MB for B=2
-      - New sequential peak: L × V × 2 B   ≈  183 MB, → c × V × 2 B ≈ 61 MB
+    For Qwen3-1.7B (V=151936, hidden=2048) at L≈600, c≈100 in fp16:
+      - Old peak: L × V × 2 B  ≈  183 MB per sequence
+      - New peak: c × V × 2 B  ≈   31 MB per sequence  (~6× reduction)
+
+    Both the policy pass (with grad) and the reference pass
+    (model.disable_adapter() + torch.no_grad()) go through this function,
+    so both benefit from the same reduction.
     """
     result = []
     for seq, p, c in zip(sequences, prompt_lens, comp_lens):
-        ids = torch.tensor([seq], dtype=torch.long, device=device)
+        ids  = torch.tensor([seq], dtype=torch.long, device=device)
         attn = torch.ones(1, len(seq), dtype=torch.long, device=device)
-        logits = model(ids, attention_mask=attn).logits[0]      # (L, V)
 
-        # Causal shift: logit at p-1 predicts the token at position p.
-        # Clone before del to give the slice its own storage while keeping
-        # the computation graph intact (del logits is then safe).
-        comp_logits = logits[p - 1 : p - 1 + c].clone()        # (c, V) own storage
-        del logits                                               # free (L, V) tensor now
+        # ── Step 1: base transformer forward — no lm_head ──────────────────
+        # model.model is the bare transformer stack; lm_head is a separate
+        # Linear layer applied afterwards.  Skipping it here keeps the full
+        # (1, L, hidden_dim) hidden state in memory rather than the much
+        # larger (1, L, vocab_size) logit tensor.
+        hidden = model.model(ids, attention_mask=attn)[0]        # (1, L, H)
+
+        # ── Step 2: slice to completion positions only ──────────────────────
+        # Causal shift: hidden[p-1] is the state that predicts token at p.
+        comp_hidden = hidden[0, p - 1 : p - 1 + c]              # (c, H)
+        del hidden                                               # free (1, L, H)
+
+        # ── Step 3: apply lm_head to the small slice ────────────────────────
+        comp_logits = model.lm_head(comp_hidden)                 # (c, V)
 
         comp_ids = torch.tensor(seq[p : p + c], dtype=torch.long, device=device)
         lps = F.log_softmax(comp_logits, dim=-1)[
