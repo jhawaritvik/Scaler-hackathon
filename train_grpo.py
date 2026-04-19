@@ -441,6 +441,30 @@ def compute_advantages(trajectories: list[Trajectory]) -> list[float]:
 # GRPO loss and update
 # ---------------------------------------------------------------------------
 
+class _UnslothHiddenStatesMode:
+    """
+    Scoped env-var toggle — while active, Unsloth's patched CausalLM.forward
+    returns hidden states (B, L, H) in the .logits field of
+    CausalLMOutputWithPast instead of running the internal lm_head.
+
+    Checked by Unsloth per forward call (not cached), so it's safe to flip
+    around specific forward passes.  Must be scoped: globally setting it
+    would break model.generate() and any caller reading real .logits.
+    """
+    _VAR = "UNSLOTH_RETURN_HIDDEN_STATES"
+
+    def __enter__(self):
+        self._prev = os.environ.get(self._VAR)
+        os.environ[self._VAR] = "1"
+        return self
+
+    def __exit__(self, *_):
+        if self._prev is None:
+            os.environ.pop(self._VAR, None)
+        else:
+            os.environ[self._VAR] = self._prev
+
+
 def _logprobs_for_batch(
     model,
     sequences: list[list[int]],
@@ -451,55 +475,62 @@ def _logprobs_for_batch(
     """
     Per-token completion logprobs, processed one sequence at a time.
 
-    Memory strategy: call the bare transformer backbone WITHOUT lm_head to get
-    hidden states (1, L, hidden_dim), slice to only the c completion positions,
-    then apply lm_head to (c, hidden_dim) only.  This avoids ever materialising
-    the full (L, vocab_size) logits tensor.
+    Memory strategy: under _UnslothHiddenStatesMode, the full model forward
+    skips Unsloth's internal lm_head and returns hidden states (B, L, H) in
+    the .logits field.  We then apply lm_head ourselves to the c completion
+    positions only, avoiding the full (L, V) logits allocation.
 
-    PEFT/Unsloth model hierarchy:
-      model               PeftModelForCausalLM   calling → logits
-      model.model         LoraModel              calling → logits (delegates to CausalLM)
-      get_base_model()    Qwen3ForCausalLM       calling → logits
-      get_base_model().model    Qwen3Model       calling → hidden states ✓
-      get_base_model().lm_head  Linear           vocab projection ✓
-
-    Using get_base_model() avoids hard-coding the nesting depth.  LoRA layers
-    are injected in-place into Qwen3Model.layers, so they are still active here
-    and are correctly disabled by the model.disable_adapter() context for the
-    reference pass.
+    Forwarding `model` (the PEFT wrapper) directly — rather than reaching into
+    `get_base_model().model` — keeps Unsloth's fast forward path, gradient
+    checkpointing, and disable_adapter() all working without any assumptions
+    about internal module nesting (the source of the earlier
+    "mat1 and mat2 shapes cannot be multiplied" crash, where `model.model`
+    was actually Qwen3ForCausalLM and returned logits instead of hidden states).
 
     For Qwen3-1.7B (V=151936, H=2048) at L≈600, c≈100 in fp16:
-      Old: L × V × 2 B ≈ 183 MB per sequence
-      New: c × V × 2 B ≈  30 MB per sequence  (~6× reduction)
+      Without: L × V × 2 B ≈ 183 MB per sequence (full logits)
+      With:    c × V × 2 B ≈  30 MB per sequence (~6× reduction)
     """
-    # Resolve backbone and lm_head once for the whole batch.
-    # get_base_model() (PEFT API) returns Qwen3ForCausalLM.
-    # Fall back to model itself if not a PEFT wrapper.
+    # lm_head lives on the causal LM two PEFT wrappers in.  get_base_model()
+    # returns Qwen3ForCausalLM whose .lm_head is the vocab projection.
     causal_lm = model.get_base_model() if hasattr(model, "get_base_model") else model
-    backbone  = causal_lm.model    # Qwen3Model — returns hidden states, no vocab proj
     lm_head   = causal_lm.lm_head  # Linear(hidden_dim → vocab_size)
+    hidden_dim = lm_head.in_features
 
     result = []
-    for seq, p, c in zip(sequences, prompt_lens, comp_lens):
-        ids  = torch.tensor([seq], dtype=torch.long, device=device)
-        attn = torch.ones(1, len(seq), dtype=torch.long, device=device)
+    with _UnslothHiddenStatesMode():
+        for seq, p, c in zip(sequences, prompt_lens, comp_lens):
+            ids  = torch.tensor([seq], dtype=torch.long, device=device)
+            attn = torch.ones(1, len(seq), dtype=torch.long, device=device)
 
-        # ── Step 1: backbone forward — hidden states only, no lm_head ───────
-        hidden = backbone(ids, attention_mask=attn)[0]           # (1, L, H)
+            # ── Step 1: full model forward — .logits holds hidden states ────
+            out = model(input_ids=ids, attention_mask=attn, use_cache=False)
+            hidden = out.logits                                      # (1, L, H)
 
-        # ── Step 2: slice to completion positions only ───────────────────────
-        # Causal shift: hidden[p-1] predicts the token at position p.
-        comp_hidden = hidden[0, p - 1 : p - 1 + c]              # (c, H)
-        del hidden                                               # free (1, L, H) now
+            # Guard: if the Unsloth version in use doesn't honour the env var
+            # the last dim will be vocab_size rather than hidden_dim.  Fail
+            # loudly rather than letting lm_head crash with a cryptic matmul
+            # shape error downstream.
+            if hidden.shape[-1] != hidden_dim:
+                raise RuntimeError(
+                    f"Expected hidden dim {hidden_dim} from model forward, got "
+                    f"{hidden.shape[-1]}. Unsloth did not honour "
+                    "UNSLOTH_RETURN_HIDDEN_STATES=1 — check unsloth version."
+                )
 
-        # ── Step 3: apply lm_head to the small slice only ───────────────────
-        comp_logits = lm_head(comp_hidden)                       # (c, V)
+            # ── Step 2: slice to completion positions only ─────────────────
+            # Causal shift: hidden[p-1] predicts the token at position p.
+            comp_hidden = hidden[0, p - 1 : p - 1 + c]              # (c, H)
+            del hidden, out                                          # free (1, L, H)
 
-        comp_ids = torch.tensor(seq[p : p + c], dtype=torch.long, device=device)
-        lps = F.log_softmax(comp_logits, dim=-1)[
-            torch.arange(c, device=device), comp_ids
-        ]                                                        # (c,)
-        result.append(lps)
+            # ── Step 3: apply lm_head to the small slice only ──────────────
+            comp_logits = lm_head(comp_hidden)                       # (c, V)
+
+            comp_ids = torch.tensor(seq[p : p + c], dtype=torch.long, device=device)
+            lps = F.log_softmax(comp_logits, dim=-1)[
+                torch.arange(c, device=device), comp_ids
+            ]                                                        # (c,)
+            result.append(lps)
     return result
 
 
