@@ -81,11 +81,11 @@ class Config:
         "medium": [67, 101, 201, 301],
         "hard":   [12, 102, 202, 302],
     })
-    group_size: int = 8
+    group_size: int = 4
     inner_epochs: int = 4
-    micro_batch_size: int = 4       # sequences per gradient accumulation step
+    micro_batch_size: int = 1       # sequences per optimizer.step(); each seq backprops alone
     max_episode_steps: int = 20
-    max_new_tokens: int = 512       # max tokens generated per action
+    max_new_tokens: int = 256       # max tokens generated per action
     learning_rate: float = 5e-6
     lora_rank: int = 16
     lora_alpha: int = 32
@@ -164,11 +164,11 @@ def _build_user_prompt(obs: WildfireObservation) -> str:
                 "burned_cells": obs.burned_cells,
                 "details": [
                     {"row": f.row, "col": f.col, "intensity": round(f.intensity, 2)}
-                    for f in sorted(obs.fire_details, key=lambda f: -f.intensity)[:8]
+                    for f in sorted(obs.fire_details, key=lambda f: -f.intensity)[:5]
                 ],
                 "heat_warnings": [
                     {"row": h.row, "col": h.col}
-                    for h in obs.heat_warnings[:5]
+                    for h in obs.heat_warnings[:3]
                 ],
             },
             "atmosphere": {
@@ -549,7 +549,13 @@ def grpo_update(
         L = -min(r*A, clip(r,1-ε,1+ε)*A) + β * KL(π_θ || π_ref)
     where r = exp(new_lp - old_lp) and KL uses Schulman (2020) estimator.
 
-    Gradient is accumulated across micro-batches before each optimizer step.
+    Memory strategy: each sequence is forward→loss→backward→discard. Only one
+    autograd graph is alive at a time; gradients accumulate in param.grad across
+    sequences within an epoch. The old "micro_batch_size" flag is kept as a
+    cosmetic grouping — the peak memory is 1 seq either way. optimizer.step()
+    is called once per inner epoch (not per micro-batch) so the effective batch
+    size is the full epoch. Loss is scaled by 1/len(all_steps) at each backward
+    so accumulated gradients equal the mean-loss gradient of the old path.
     """
     # Flatten (traj, step) → list of (StepData, advantage)
     all_steps: list[tuple[StepData, float]] = []
@@ -566,63 +572,63 @@ def grpo_update(
     total_kl = 0.0
     total_clip_frac = 0.0
     n_samples = 0
+    inv_n = 1.0 / len(all_steps)
 
     for _epoch in range(config.inner_epochs):
         random.shuffle(all_steps)
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         torch.cuda.empty_cache()  # free fragments from previous epoch / rollout
         epoch_loss = 0.0
 
-        for chunk_start in range(0, len(all_steps), config.micro_batch_size):
-            chunk = all_steps[chunk_start : chunk_start + config.micro_batch_size]
-            seqs    = [s.full_seq     for s, _ in chunk]
-            plens   = [s.prompt_len   for s, _ in chunk]
-            clens   = [s.comp_len     for s, _ in chunk]
-            old_lps = [s.old_logprobs for s, _ in chunk]
-            advs    = [a              for _, a in chunk]
-
+        for step, adv in all_steps:
             model.train()
-            new_lps_list = _logprobs_for_batch(model, seqs, plens, clens, device)
 
-            # Reference logprobs for KL (base model, no gradient needed)
+            # ── Reference logprobs first (no grad) so the PEFT adapter can be
+            # disabled cleanly without interleaving with the grad forward. ──
             if config.kl_coef > 0:
                 with model.disable_adapter():
                     with torch.no_grad():
-                        ref_lps_list = _logprobs_for_batch(model, seqs, plens, clens, device)
+                        ref_lp = _logprobs_for_batch(
+                            model, [step.full_seq], [step.prompt_len],
+                            [step.comp_len], device,
+                        )[0].detach()
             else:
-                ref_lps_list = [None] * len(chunk)
+                ref_lp = None
 
-            loss_terms = []
-            for i in range(len(chunk)):
-                new_lp = new_lps_list[i]                                         # (C,) with grad
-                old_lp = torch.tensor(old_lps[i], device=device)                 # (C,) detached
-                adv_t  = torch.tensor(advs[i], dtype=torch.float32, device=device)
+            # ── Policy forward WITH grad ──────────────────────────────────
+            new_lp = _logprobs_for_batch(
+                model, [step.full_seq], [step.prompt_len],
+                [step.comp_len], device,
+            )[0]                                                        # (C,) with grad
 
-                ratio   = torch.exp(new_lp - old_lp)
-                clipped = torch.clamp(ratio, 1.0 - config.clip_range, 1.0 + config.clip_range)
-                surrogate = torch.min(ratio * adv_t, clipped * adv_t)
-                loss_i    = -surrogate.mean()
+            old_lp = torch.tensor(step.old_logprobs, device=device)     # (C,) detached
+            adv_t  = torch.tensor(adv, dtype=torch.float32, device=device)
 
-                cf = ((ratio - clipped).abs() > 1e-6).float().mean().item()
-                total_clip_frac += cf
+            ratio     = torch.exp(new_lp - old_lp)
+            clipped   = torch.clamp(ratio, 1.0 - config.clip_range, 1.0 + config.clip_range)
+            surrogate = torch.min(ratio * adv_t, clipped * adv_t)
+            loss_i    = -surrogate.mean()
 
-                if config.kl_coef > 0 and ref_lps_list[i] is not None:
-                    ref_lp = ref_lps_list[i].detach()
-                    # Schulman (2020) unbiased KL estimator:
-                    #   KL(π_θ || π_ref) ≈ e^(log π_ref - log π_θ) - 1 - (log π_ref - log π_θ)
-                    log_r = ref_lp - new_lp
-                    kl_i  = (torch.exp(log_r) - 1.0 - log_r).mean()
-                    total_kl += kl_i.item()
-                    loss_i = loss_i + config.kl_coef * kl_i
+            cf = ((ratio - clipped).abs() > 1e-6).float().mean().item()
+            total_clip_frac += cf
 
-                loss_terms.append(loss_i)
-                n_samples += 1
+            if ref_lp is not None:
+                # Schulman (2020) unbiased KL estimator:
+                #   KL(π_θ || π_ref) ≈ e^(log π_ref - log π_θ) - 1 - (log π_ref - log π_θ)
+                log_r = ref_lp - new_lp
+                kl_i  = (torch.exp(log_r) - 1.0 - log_r).mean()
+                total_kl += kl_i.item()
+                loss_i = loss_i + config.kl_coef * kl_i
 
-            # Normalise by total step count so the gradient magnitude is
-            # consistent regardless of how many steps are in this chunk.
-            chunk_loss = sum(loss_terms) / len(all_steps)
-            chunk_loss.backward()
-            epoch_loss += chunk_loss.item() * len(chunk)
+            (loss_i * inv_n).backward()
+            epoch_loss += loss_i.item()
+            n_samples += 1
+
+            # Free the graph eagerly — matters on T4 where the next forward
+            # would otherwise trip OOM before Python GC runs.
+            del new_lp, ratio, clipped, surrogate, loss_i
+            if ref_lp is not None:
+                del ref_lp
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
