@@ -86,7 +86,7 @@ class Config:
     micro_batch_size: int = 1       # sequences per optimizer.step(); each seq backprops alone
     max_episode_steps: int = 20
     max_new_tokens: int = 256       # max tokens generated per action
-    learning_rate: float = 5e-6
+    learning_rate: float = 3e-5
     lora_rank: int = 16
     lora_alpha: int = 32
     # Qwen3 uses standard transformer attention: q/k/v/o projections are correct targets.
@@ -94,9 +94,11 @@ class Config:
     kl_coef: float = 0.04
     clip_range: float = 0.2
     total_iterations: int = 30
-    rollout_temperature: float = 0.9
-    rollout_top_p: float = 0.8
-    rollout_top_k: int = 20
+    rollout_temperature: float = 1.1
+    rollout_top_p: float = 0.95
+    rollout_top_k: int = 50
+    grader_return_weight: float = 10.0     # grader contribution to total_return
+    vary_env_seed_in_group: bool = True    # inject env variance across group members
     output_dir: str = "./grpo_wildfire"
 
 
@@ -373,7 +375,7 @@ def rollout_episode(
         burning_cells=obs.burning_cells,
     )
     grader_score = _grade_episode(req).score
-    total_return = sum(s.step_reward for s in steps) + 2.0 * grader_score
+    total_return = sum(s.step_reward for s in steps) + config.grader_return_weight * grader_score
 
     return Trajectory(
         steps=steps,
@@ -398,18 +400,25 @@ def rollout_group(
     base_sampling_seed: int = 0,
 ) -> list[Trajectory]:
     """
-    Collect G trajectories for the same task+seed with different sampling seeds.
+    Collect G trajectories for GRPO advantage estimation.
 
     GRPO needs within-group reward variance to compute meaningful advantages.
-    Varying only sampling_seed while holding task+seed fixed gives variance
-    from stochastic sampling while keeping the problem identical.
+    With a fully-deterministic env (fire spread seeded by `seed`) and XGrammar
+    constraining token choice, fixing `seed` across the group often produces
+    near-identical trajectories → std_return ≈ 0 → zero gradient.
+
+    When `vary_env_seed_in_group=True` we bump the env seed per group member,
+    trading "same problem, different policy samples" purity for real variance
+    in fire layouts. The task_id (difficulty tier) is still held fixed, so
+    the advantage signal is still tier-calibrated.
     """
     trajectories = []
     for g in range(config.group_size):
         sampling_seed = base_sampling_seed + g * 1000 + seed
+        env_seed = seed + g if config.vary_env_seed_in_group else seed
         traj = rollout_episode(
             model, tokenizer, compiled_grammar,
-            task_id, seed, sampling_seed, config, device,
+            task_id, env_seed, sampling_seed, config, device,
         )
         trajectories.append(traj)
     return trajectories
