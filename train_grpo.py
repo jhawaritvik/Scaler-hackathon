@@ -737,6 +737,36 @@ def train(config: Config):
     print(f"  LoRA: rank={config.lora_rank} alpha={config.lora_alpha} "
           f"dropout={config.lora_dropout} modules={config.lora_target_modules}")
 
+    # ── Resume from previous run if latest/ exists ──────────────────────────
+    # Saved every iter → at most one iter is lost on disconnect.
+    start_iter = 0
+    best_grader_per_task: dict[str, float] = {}
+    resume_dir    = os.path.join(config.output_dir, "latest")
+    resume_state  = os.path.join(config.output_dir, "resume_state.json")
+    if os.path.isdir(resume_dir) and os.path.isfile(resume_state):
+        from peft import set_peft_model_state_dict
+        try:
+            from safetensors.torch import load_file as _load_st
+            adapter_file = os.path.join(resume_dir, "adapter_model.safetensors")
+            if os.path.isfile(adapter_file):
+                state = _load_st(adapter_file, device="cpu")
+            else:  # older PEFT saved .bin
+                state = torch.load(
+                    os.path.join(resume_dir, "adapter_model.bin"),
+                    map_location="cpu",
+                )
+            set_peft_model_state_dict(model, state)
+            with open(resume_state) as fh:
+                meta = json.load(fh)
+            start_iter = int(meta["next_iter"])
+            best_grader_per_task = {k: float(v) for k, v in meta.get("best_grader_per_task", {}).items()}
+            print(f"  ↻ Resumed from {resume_dir}  → start_iter={start_iter}  "
+                  f"best={best_grader_per_task}")
+        except Exception as exc:
+            print(f"  ⚠  resume failed ({exc}); starting from scratch")
+            start_iter = 0
+            best_grader_per_task = {}
+
     # ── XGrammar ────────────────────────────────────────────────────────────
     print("Compiling WildfireAction JSON schema grammar …")
     compiler = build_grammar_compiler(tokenizer, model)
@@ -774,11 +804,9 @@ def train(config: Config):
         cos = 0.5 * (1.0 + _math.cos(_math.pi * progress))
         return config.lr_min + (config.learning_rate - config.lr_min) * cos
 
-    # ── Per-task best-grader tracker (saves adapter when beaten) ────────────
-    best_grader_per_task: dict[str, float] = {}
-
     # ── Training iterations ─────────────────────────────────────────────────
-    for iteration in range(config.total_iterations):
+    # (best_grader_per_task is initialized above, possibly from resume state)
+    for iteration in range(start_iter, config.total_iterations):
         task_id    = get_task_for_iter(iteration, config)
         seed_pool  = config.seeds_per_task[task_id]
 
@@ -889,6 +917,19 @@ def train(config: Config):
             model.save_pretrained(best_dir)
             tokenizer.save_pretrained(best_dir)
             print(f"  ★ new best on {task_id}: {cur_grader:.3f} (prev {prev_best:.3f}) → {best_dir}")
+
+        # ── Resume checkpoint every iter (overwrites) ──────────────────────
+        # Tiny overhead (~1-2 s for rank-16 LoRA) but caps disconnect loss to
+        # at most one iteration. The companion resume_state.json carries the
+        # iter pointer and per-task best-grader map.
+        latest_dir = os.path.join(config.output_dir, "latest")
+        model.save_pretrained(latest_dir)
+        with open(os.path.join(config.output_dir, "resume_state.json"), "w") as fh:
+            json.dump({
+                "next_iter":             iteration + 1,
+                "best_grader_per_task":  best_grader_per_task,
+                "total_iterations":      config.total_iterations,
+            }, fh, indent=2)
 
         # ── Periodic snapshot every 10 iters ───────────────────────────────
         if (iteration + 1) % 10 == 0 or iteration == config.total_iterations - 1:
