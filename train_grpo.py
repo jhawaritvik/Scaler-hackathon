@@ -75,7 +75,7 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 @dataclass
 class Config:
     model_name: str = "Qwen/Qwen3-1.7B"
-    task_curriculum: tuple = (("medium", 0, 20), ("hard", 20, 30))
+    task_curriculum: tuple = (("medium", 0, 25), ("hard", 25, 40))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
         "medium": [67, 101, 201, 301],
@@ -89,13 +89,16 @@ class Config:
     max_new_tokens: int = 256       # max tokens generated per action
     learning_rate: float = 3e-5
     lr_min: float = 5e-6            # cosine schedule end LR
+    warmup_iters: int = 3           # linear warmup before cosine — kills iter-0 loss spike
+    weight_decay: float = 0.01      # AdamW weight decay (mild regularizer on LoRA params)
     lora_rank: int = 16
     lora_alpha: int = 32
+    lora_dropout: float = 0.05      # dropout on the LoRA path — primary overfit defense
     # Qwen3 uses standard transformer attention: q/k/v/o projections are correct targets.
     lora_target_modules: tuple = ("q_proj", "k_proj", "v_proj", "o_proj")
     kl_coef: float = 0.08           # raised from 0.04 — stronger anchor to ref policy
     clip_range: float = 0.2
-    total_iterations: int = 30
+    total_iterations: int = 40
     rollout_temperature: float = 1.1
     rollout_top_p: float = 0.95
     rollout_top_k: int = 50
@@ -726,13 +729,13 @@ def train(config: Config):
         r=config.lora_rank,
         target_modules=list(config.lora_target_modules),
         lora_alpha=config.lora_alpha,
-        lora_dropout=0,
+        lora_dropout=config.lora_dropout,
         bias="none",
         use_gradient_checkpointing="unsloth",   # Unsloth's memory-efficient checkpointing
         random_state=42,
     )
     print(f"  LoRA: rank={config.lora_rank} alpha={config.lora_alpha} "
-          f"modules={config.lora_target_modules}")
+          f"dropout={config.lora_dropout} modules={config.lora_target_modules}")
 
     # ── XGrammar ────────────────────────────────────────────────────────────
     print("Compiling WildfireAction JSON schema grammar …")
@@ -744,21 +747,30 @@ def train(config: Config):
     try:
         import bitsandbytes as bnb
         optimizer: torch.optim.Optimizer = bnb.optim.AdamW8bit(
-            model.parameters(), lr=config.learning_rate
+            model.parameters(), lr=config.learning_rate,
+            weight_decay=config.weight_decay,
         )
-        print("  Using AdamW8bit optimizer (bitsandbytes)")
+        print(f"  Using AdamW8bit optimizer (bitsandbytes), wd={config.weight_decay}")
     except (ImportError, AttributeError):
-        optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
-        print("  Using standard AdamW optimizer")
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+        )
+        print(f"  Using standard AdamW optimizer, wd={config.weight_decay}")
 
-    # ── Cosine LR schedule (lr_max → lr_min over total_iterations) ──────────
-    # Fights late-training drift: previous run plateaued around iter 8 then
-    # regressed because LR stayed at 3e-5 once advantages had calibrated.
+    # ── LR schedule: linear warmup → cosine decay to lr_min ────────────────
+    # Warmup fights the iter-0 loss spike (prior run hit +17 on iter 0 because
+    # the full 3e-5 LR met uncalibrated advantages). Cosine then handles the
+    # late-training drift that plateaued seed-67 gains after iter 8.
     import math as _math
     def _lr_at(iter_idx: int) -> float:
-        if config.total_iterations <= 1:
-            return config.learning_rate
-        progress = iter_idx / (config.total_iterations - 1)
+        if iter_idx < config.warmup_iters:
+            # Linear ramp from lr_min → learning_rate over warmup_iters
+            frac = (iter_idx + 1) / max(1, config.warmup_iters)
+            return config.lr_min + (config.learning_rate - config.lr_min) * frac
+        post_warmup_total = max(1, config.total_iterations - config.warmup_iters)
+        progress = (iter_idx - config.warmup_iters) / post_warmup_total
+        progress = min(1.0, max(0.0, progress))
         cos = 0.5 * (1.0 + _math.cos(_math.pi * progress))
         return config.lr_min + (config.learning_rate - config.lr_min) * cos
 
