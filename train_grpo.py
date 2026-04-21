@@ -82,16 +82,18 @@ class Config:
         "hard":   [12, 102, 202, 302],
     })
     group_size: int = 4
+    seeds_per_iter: int = 2         # base seeds sampled per iter; group_size split across them
     inner_epochs: int = 4
     micro_batch_size: int = 1       # sequences per optimizer.step(); each seq backprops alone
     max_episode_steps: int = 20
     max_new_tokens: int = 256       # max tokens generated per action
     learning_rate: float = 3e-5
+    lr_min: float = 5e-6            # cosine schedule end LR
     lora_rank: int = 16
     lora_alpha: int = 32
     # Qwen3 uses standard transformer attention: q/k/v/o projections are correct targets.
     lora_target_modules: tuple = ("q_proj", "k_proj", "v_proj", "o_proj")
-    kl_coef: float = 0.04
+    kl_coef: float = 0.08           # raised from 0.04 — stronger anchor to ref policy
     clip_range: float = 0.2
     total_iterations: int = 30
     rollout_temperature: float = 1.1
@@ -749,57 +751,101 @@ def train(config: Config):
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
         print("  Using standard AdamW optimizer")
 
+    # ── Cosine LR schedule (lr_max → lr_min over total_iterations) ──────────
+    # Fights late-training drift: previous run plateaued around iter 8 then
+    # regressed because LR stayed at 3e-5 once advantages had calibrated.
+    import math as _math
+    def _lr_at(iter_idx: int) -> float:
+        if config.total_iterations <= 1:
+            return config.learning_rate
+        progress = iter_idx / (config.total_iterations - 1)
+        cos = 0.5 * (1.0 + _math.cos(_math.pi * progress))
+        return config.lr_min + (config.learning_rate - config.lr_min) * cos
+
+    # ── Per-task best-grader tracker (saves adapter when beaten) ────────────
+    best_grader_per_task: dict[str, float] = {}
+
     # ── Training iterations ─────────────────────────────────────────────────
     for iteration in range(config.total_iterations):
-        task_id = get_task_for_iter(iteration, config)
-        seeds   = config.seeds_per_task[task_id]
-        seed    = seeds[iteration % len(seeds)]
+        task_id    = get_task_for_iter(iteration, config)
+        seed_pool  = config.seeds_per_task[task_id]
+
+        # Sample K=seeds_per_iter base seeds without replacement, then split
+        # group_size rollouts evenly across them. Prevents the policy from
+        # specializing to one easy seed (the iter-0/4/8 pattern from the prior run).
+        K = max(1, min(config.seeds_per_iter, len(seed_pool)))
+        if config.group_size % K != 0:
+            raise ValueError(
+                f"group_size ({config.group_size}) must be divisible by "
+                f"seeds_per_iter ({K}) — adjust Config."
+            )
+        rng = random.Random(iteration)
+        chosen_seeds = rng.sample(seed_pool, K)
+        rollouts_per_seed = config.group_size // K
+
+        # Set LR for this iteration
+        cur_lr = _lr_at(iteration)
+        for pg in optimizer.param_groups:
+            pg["lr"] = cur_lr
 
         print(f"\n── iter {iteration:3d}/{config.total_iterations}  "
-              f"task={task_id}  seed={seed} ──")
+              f"task={task_id}  seeds={chosen_seeds}  lr={cur_lr:.2e} ──")
 
-        # ── Rollout phase ───────────────────────────────────────────────────
+        # ── Rollout phase: K independent groups, advantages computed PER GROUP ─
         t0 = time.time()
-        trajectories = rollout_group(
-            model, tokenizer, compiled_grammar,
-            task_id, seed, config, device,
-            base_sampling_seed=iteration * 10_000,
-        )
+        all_trajectories: list[Trajectory] = []
+        all_advantages:   list[float] = []
+        per_seed_meta = []     # (seed, group_mean_grader, group_std_return)
+
+        # Use a small saved-config trick to override group_size inside rollout_group
+        # without further refactoring — copy config, set group_size = rollouts_per_seed.
+        sub_cfg = type(config)(**{**vars(config), "group_size": rollouts_per_seed})
+
+        for k_idx, base_seed in enumerate(chosen_seeds):
+            sub_trajs = rollout_group(
+                model, tokenizer, compiled_grammar,
+                task_id, base_seed, sub_cfg, device,
+                base_sampling_seed=iteration * 10_000 + k_idx * 100_000,
+            )
+            sub_adv = compute_advantages(sub_trajs)
+            all_trajectories.extend(sub_trajs)
+            all_advantages.extend(sub_adv)
+            per_seed_meta.append((
+                base_seed,
+                float(np.mean([t.grader_score   for t in sub_trajs])),
+                float(np.std ([t.total_return  for t in sub_trajs])),
+            ))
         rollout_secs = time.time() - t0
 
-        # ── Advantages ─────────────────────────────────────────────────────
-        advantages = compute_advantages(trajectories)
-        returns     = np.array([t.total_return        for t in trajectories])
-        g_scores    = np.array([t.grader_score        for t in trajectories])
-        ep_steps    = np.array([t.episode_steps       for t in trajectories])
-        parse_ok    = sum(t.action_parse_successes     for t in trajectories)
-        parse_total = sum(t.episode_steps              for t in trajectories)
-
-        ret_std = float(returns.std())
-        if ret_std < 1e-6:
-            print("  ⚠  reward std=0 — all trajectories tied; gradient will be zero")
+        # ── Aggregate diagnostics ──────────────────────────────────────────
+        returns     = np.array([t.total_return for t in all_trajectories])
+        g_scores    = np.array([t.grader_score for t in all_trajectories])
+        ep_steps    = np.array([t.episode_steps for t in all_trajectories])
+        parse_ok    = sum(t.action_parse_successes for t in all_trajectories)
+        parse_total = sum(t.episode_steps          for t in all_trajectories)
+        ret_std     = float(returns.std())
 
         # ── Update phase ────────────────────────────────────────────────────
-        # Release cached GPU memory that accumulated during rollout (KV-cache
-        # fragments, intermediate tensors from generate()) before starting the
-        # backward-pass-heavy update step.
         torch.cuda.empty_cache()
-
         t1 = time.time()
-        upd = grpo_update(model, optimizer, trajectories, advantages, config, device)
+        upd = grpo_update(
+            model, optimizer, all_trajectories, all_advantages, config, device,
+        )
         update_secs = time.time() - t1
 
         # ── Log ─────────────────────────────────────────────────────────────
         metrics = {
             "iter":                      iteration,
             "task_id":                   task_id,
-            "seed":                      seed,
+            "seeds":                     chosen_seeds,
+            "lr":                        cur_lr,
             "mean_return":               float(returns.mean()),
             "std_return":                ret_std,
             "min_return":                float(returns.min()),
             "max_return":                float(returns.max()),
             "mean_grader_score":         float(g_scores.mean()),
             "max_grader_score":          float(g_scores.max()),
+            "per_seed_grader":           {s: g for s, g, _ in per_seed_meta},
             "action_parse_success_rate": parse_ok / max(1, parse_total),
             "mean_episode_steps":        float(ep_steps.mean()),
             "policy_loss":               upd["policy_loss"],
@@ -809,20 +855,30 @@ def train(config: Config):
             "update_seconds":            update_secs,
         }
         log(metrics)
+        per_seed_str = "  ".join(f"s{s}={g:.2f}" for s, g, _ in per_seed_meta)
         print(
             f"  loss={metrics['policy_loss']:+.4f}  "
-            f"grader={metrics['mean_grader_score']:.3f}  "
-            f"ret={metrics['mean_return']:.2f}±{ret_std:.2f}  "
+            f"grader={metrics['mean_grader_score']:.3f} ({per_seed_str})  "
+            f"ret={metrics['mean_return']:+.2f}±{ret_std:.2f}  "
             f"parse={metrics['action_parse_success_rate']:.1%}  "
             f"kl={metrics['kl_divergence']:.4f}  "
             f"clip={metrics['clip_fraction']:.2%}"
         )
 
-        # Warn if parse rate drops below threshold (should be ~1.0 with XGrammar)
         if metrics["action_parse_success_rate"] < 0.95:
             print("  ⚠  parse_success_rate < 0.95 — check XGrammar integration")
 
-        # ── Save adapter checkpoint every 10 iters ─────────────────────────
+        # ── Save best-grader adapter per task ──────────────────────────────
+        cur_grader = metrics["mean_grader_score"]
+        prev_best  = best_grader_per_task.get(task_id, -1.0)
+        if cur_grader > prev_best:
+            best_grader_per_task[task_id] = cur_grader
+            best_dir = os.path.join(config.output_dir, f"best_adapter_{task_id}")
+            model.save_pretrained(best_dir)
+            tokenizer.save_pretrained(best_dir)
+            print(f"  ★ new best on {task_id}: {cur_grader:.3f} (prev {prev_best:.3f}) → {best_dir}")
+
+        # ── Periodic snapshot every 10 iters ───────────────────────────────
         if (iteration + 1) % 10 == 0 or iteration == config.total_iterations - 1:
             ckpt = os.path.join(config.output_dir, f"adapter_iter{iteration + 1:04d}")
             model.save_pretrained(ckpt)
@@ -830,6 +886,7 @@ def train(config: Config):
             print(f"  Saved → {ckpt}")
 
     print("\nTraining complete.")
+    print("Best grader per task:", best_grader_per_task)
 
 
 if __name__ == "__main__":
