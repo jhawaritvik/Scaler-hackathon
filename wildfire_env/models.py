@@ -225,3 +225,13 @@ class WildfireObservation(Observation):
             "Designed to help LLM agents produce valid actions without memorising the compatibility matrix."
         ),
     )
+    weather_forecast: list[dict] = Field(
+        default_factory=list,
+        description=(
+            "2-step NWS Spot Forecast style look-ahead (NWCG PMS 425). "
+            "Each entry: {step, minutes_ahead, temperature, humidity, "
+            "wind_speed_expected, wind_direction_current}. "
+            "Temperature and humidity are deterministic (diurnal cycle). "
+            "wind_speed_expected is the diurnal trend without stochastic noise."
+        ),
+    )

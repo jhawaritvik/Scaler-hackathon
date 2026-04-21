@@ -179,6 +179,12 @@ class TerrainConfig:
     # Episode
     warmup_steps: int = 0
     max_steps: int = 20
+    # Minimum elapsed steps before an all-fire-out episode is allowed to end
+    # early.  Prevents trivial zero-step victories on easy scenarios where the
+    # agent suppresses the first ignition instantly.
+    # Source: design constraint to keep training signal meaningful across all
+    # difficulty levels.
+    min_steps_before_early_end: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +238,9 @@ class DifficultySpec:
     warmup_steps: tuple[int, int] = (0, 0)
     max_steps: int = 20
     grid_size: int = GRID_SIZE
+    # Hard minimum on elapsed steps before early fire-out termination is
+    # allowed.  Prevents trivial victories from dominating training signal.
+    min_steps_before_early_end: int = 0
 
 
 def _draw_int(rng: np.random.Generator, lo: int, hi: int) -> int:
@@ -343,6 +352,7 @@ def draw_scenario(spec: DifficultySpec, seed: int) -> TerrainConfig:
         outposts=outposts,
         warmup_steps=warmup_steps,
         max_steps=spec.max_steps,
+        min_steps_before_early_end=spec.min_steps_before_early_end,
     )
 
 
@@ -837,6 +847,11 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         num_ground_outposts=(2, 3),
         num_air_bases=(1, 1),
         warmup_steps=(0, 0),
+        # Easy episodes must run at least 6 steps (2 sim-hours) so the agent
+        # cannot trivially suppress the single ignition and collect max score
+        # on step 1.  Prevents the easy-task score ceiling from dominating
+        # the curriculum signal.
+        min_steps_before_early_end=6,
     ),
     "medium": DifficultySpec(
         elevation_roughness=(0.4, 0.6),
@@ -864,6 +879,9 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         num_air_bases=(1, 2),
         warmup_steps=(0, 0),
         max_steps=15,
+        # Medium has a delayed re-ignition at steps 3-8, but the agent could
+        # still stall after quelling it.  Require at least 5 steps.
+        min_steps_before_early_end=5,
     ),
     "hard": DifficultySpec(
         elevation_roughness=(0.5, 0.8),
@@ -890,6 +908,9 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         num_ground_outposts=(1, 2),
         num_air_bases=(1, 1),
         warmup_steps=(2, 2),
+        # Hard already has cascading ignitions at steps 2-6; additional
+        # min-step guard not needed, but set to 3 to be consistent.
+        min_steps_before_early_end=3,
     ),
 }
 

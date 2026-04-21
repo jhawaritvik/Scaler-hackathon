@@ -481,6 +481,7 @@ class WildfireEnvironment(Environment):
                 last_action_summary=self._last_action_summary,
                 last_action_error=self._last_action_error,
                 action_guide=self._build_action_guide(),
+                weather_forecast=[],
                 done=done,
                 reward=reward,
             )
@@ -528,6 +529,7 @@ class WildfireEnvironment(Environment):
             elevation=obs.get("elevation", []),
             fuel_types=obs.get("fuel_types", []),
             action_guide=self._build_action_guide(),
+            weather_forecast=obs.get("weather_forecast", []),
             done=done,
             reward=reward,
             metadata={

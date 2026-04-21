@@ -164,6 +164,23 @@ WATER_RECHARGE_RATE = 0.02
 # Water humidity bonus for adjacent cells
 WATER_HUMIDITY_BONUS = 0.05
 
+# ── Retardant decay ──
+# Phos-Chek LC-95 (Perimeter Solutions) and equivalent long-term fire
+# retardants are chemically stable for weeks in the field under dry
+# conditions.  Under active fire conditions, however, the USDA Forest
+# Service Aerial Fire Use Effectiveness (AFUE) study found that the
+# practical effectiveness window at the fire line is approximately 4-5
+# hours before heat, smoke, and convective mixing degrade the retardant
+# residue.  At 20 min/step:
+#   base_decay = 0.008/step → full +0.40 bonus erodes to ~0.24 over
+#   5 h (15 steps), consistent with the AFUE window.
+# Adjacent burning cells accelerate degradation via radiant heating:
+#   fire_decay = 0.010 per adjacent burning cell per step
+# Sources: USDA FS AFUE Study (2018); Perimeter Solutions Phos-Chek
+# LC-95 Technical Data Sheet; NWCG Aerial Supervision PMS 505.
+RETARDANT_DECAY_BASE = 0.008        # per step, ambient UV / wind
+RETARDANT_DECAY_FIRE_PROXIMITY = 0.010  # per adjacent burning cell / step
+
 # Spotting parameters
 # Freire and DaCamara (2019), following the Alexandridis family of CA models,
 # introduce downwind nonlocal propagation once wind exceeds 8 m/s.
@@ -450,6 +467,9 @@ class FireSimulation:
         # 4. Update burning cells (timers + intensity)
         self._update_burning_cells()
 
+        # 4b. Decay retardant residue
+        self._decay_retardant()
+
         # 5. Update fire-driven airflow field
         self._update_airflow_potential()
 
@@ -469,16 +489,20 @@ class FireSimulation:
         if st.step >= self.config.max_steps:
             st.done = True
         elif st.total_burning == 0 and st.step > 0:
-            # Only end early when no future scheduled ignitions remain.
-            # Without this guard the hard task's cascading ignitions (steps 5
-            # and 10) would never fire if the agent suppresses the first fire
-            # quickly — making the task trivially easy.
+            # Only end early when no future scheduled ignitions remain AND the
+            # episode has run for a minimum number of steps.
+            # Guard 1 (existing): hard task's cascading ignitions (steps 2-6)
+            #   must not be skipped if the agent suppresses the first fire fast.
+            # Guard 2 (new): min_steps_before_early_end prevents the easy task
+            #   from ending on step 1 after a single suppression, which would
+            #   give max score trivially and destroy the training signal.
             future_ignitions = [
                 ig for ig in self.terrain.ignition_points
                 if ig["step"] > st.step
             ]
-            if not future_ignitions:
-                st.done = True  # fire is out and no more ignitions incoming
+            min_steps = getattr(self.config, "min_steps_before_early_end", 0)
+            if not future_ignitions and st.step >= min_steps:
+                st.done = True  # fire out, no pending ignitions, minimum elapsed
 
         return st
 
@@ -1101,6 +1125,98 @@ class FireSimulation:
             else:  # STRUCTURE, SUPPRESSED, BURNING — still standing
                 st.structures_saved += 1
 
+    def _decay_retardant(self) -> None:
+        """Decay retardant residue each tick.
+
+        Phos-Chek LC-95 and equivalent long-term retardants are chemically
+        stable for weeks under dry ambient conditions but degrade within
+        hours under active fire conditions due to radiant heat and convective
+        mixing.  USDA FS AFUE study (2018) places the practical effectiveness
+        window at 4-5 hours at the fire line.
+
+        Model:
+          base decay   = RETARDANT_DECAY_BASE / step  (UV, wind, ambient heat)
+          fire boost   = RETARDANT_DECAY_FIRE_PROXIMITY per adjacent burning cell
+        The vectorised 8-neighbour sum is computed with numpy padding to
+        avoid any Python-level cell loop.
+        """
+        st = self.state
+        if st.retardant_bonus is None:
+            return
+
+        # Count adjacent burning cells for every cell (vectorised 8-neighbour)
+        burning = (st.cell_state == STATE_BURNING).astype(np.float64)
+        pad = np.pad(burning, 1, mode="constant", constant_values=0.0)
+        neighbor_burning = (
+            pad[:-2, :-2] + pad[:-2, 1:-1] + pad[:-2, 2:]
+            + pad[1:-1, :-2]               + pad[1:-1, 2:]
+            + pad[2:, :-2]  + pad[2:, 1:-1] + pad[2:, 2:]
+        )
+
+        decay = RETARDANT_DECAY_BASE + RETARDANT_DECAY_FIRE_PROXIMITY * neighbor_burning
+        np.subtract(st.retardant_bonus, decay, out=st.retardant_bonus)
+        np.clip(st.retardant_bonus, 0.0, None, out=st.retardant_bonus)
+
+        # Release the array once fully consumed to avoid the ignition-check
+        # branch paying a per-cell numpy lookup for nothing.
+        if float(st.retardant_bonus.max()) == 0.0:
+            st.retardant_bonus = None
+
+    def forecast_weather(self, steps_ahead: int = 2) -> list[dict]:
+        """Project atmospheric conditions for the next *steps_ahead* steps.
+
+        Temperature and humidity follow a fully deterministic diurnal cycle
+        derived from the scenario's initial conditions and amplitude
+        parameters — the same parameterisation used in NWCG S-290 fire
+        behavior training materials.  Wind carries a stochastic component
+        (RNG noise each tick) so the forecast returns the expected diurnal
+        trend without noise, clearly labelled ``wind_speed_expected``.
+
+        This mirrors the NWS Spot Forecast program (NWCG PMS 425), which
+        provides up to 48-hour outlooks for wind speed/direction, temperature,
+        and relative humidity at the fire location.  Our 2-step (40-minute)
+        look-ahead is well within that reliability window.
+
+        Sources:
+          - NWCG PMS 425 "Guide to Fire Weather Forecasts"
+          - NWS Spot Forecast Instructions (weather.gov/btv/spot_instructions)
+          - NWCG PMS 437 Fire Behavior Field Reference Guide (diurnal cycle)
+        """
+        if self.state is None:
+            return []
+
+        st = self.state
+        cfg = self.config
+        forecasts: list[dict] = []
+
+        for n in range(1, steps_ahead + 1):
+            future_step = st.step + n
+            future_time = min(1.0, future_step / max(1, cfg.max_steps))
+
+            # Deterministic diurnal factor — same formula as _diurnal_factor()
+            df = max(0.0, math.sin(math.pi * future_time * 0.85 + 0.2))
+
+            fcst_temp = round(cfg.initial_temperature + cfg.temp_amplitude * df, 1)
+            fcst_humidity = round(
+                max(0.05, min(1.0, cfg.initial_humidity - cfg.humidity_swing * df)), 2
+            )
+            # Wind: expected diurnal envelope without stochastic noise
+            wind_diurnal = 0.6 + 0.4 * df
+            fcst_wind_speed = round(
+                max(0.0, min(40.0, cfg.initial_wind_speed * wind_diurnal)), 1
+            )
+
+            forecasts.append({
+                "step": future_step,
+                "minutes_ahead": round(n * SIMULATION_STEP_MINUTES, 1),
+                "temperature": fcst_temp,
+                "humidity": fcst_humidity,
+                "wind_speed_expected": fcst_wind_speed,
+                "wind_direction_current": round(st.wind_direction, 1),
+            })
+
+        return forecasts
+
     # ──────────────────────────────────────────────────
     # Resource actions
     # ──────────────────────────────────────────────────
@@ -1368,20 +1484,25 @@ class FireSimulation:
         Apply a fixed-wing air tanker retardant drop.
 
         Air tankers drop long-term retardant (ammonium phosphate, e.g.
-        Phos-Chek LC-95) that provides PERMANENT fire resistance.
+        Phos-Chek LC-95) that substantially raises the ignition threshold
+        of treated cells.
 
         Key difference from water drops:
         - Retardant chemically alters fuel combustion (Perimeter Solutions
-          technical docs). Effective for weeks until washed by rain.
-        - AFUE study: retardant-protected land takes 4-5 hours longer to
-          burn than unprotected areas.
+          Phos-Chek LC-95 Technical Data Sheet). Stable for weeks in the
+          field under dry ambient conditions.
+        - USDA FS AFUE study (2018): retardant-protected land takes 4-5 hours
+          longer to burn than unprotected areas under active fire conditions.
+        - _decay_retardant() erodes the bonus at 0.008/step (ambient) plus
+          0.010/step per adjacent burning cell, consistent with the AFUE
+          4-5 hour fire-line effectiveness window.
 
         Effect calibration:
         - Radius-2 area (large tanker coverage — LAT covers ~1/4 mile line).
         - Moisture boost is modest (+0.10) since retardant works via
           chemistry, not wetting.
-        - PERMANENT ignition threshold increase: +0.20 per treated cell.
-          This models the long-term retardant persistence.
+        - Ignition threshold increase: +0.20 per treated cell (capped 0.40).
+          Decays via _decay_retardant() each tick.
         - Intensity reduction strong (×0.25) for any currently burning cells.
         """
         if self.state is None:
@@ -1412,8 +1533,8 @@ class FireSimulation:
                 )
                 st.heat[nr, nc] *= 0.20
 
-                # Permanent ignition-threshold increase — makes retardant-treated
-                # cells harder to ignite even after moisture evaporates.
+                # Ignition-threshold increase — decays via _decay_retardant()
+                # at RETARDANT_DECAY_BASE + fire-proximity bonus per tick.
                 if st.retardant_bonus is None:
                     st.retardant_bonus = np.zeros(
                         (self.size, self.size), dtype=np.float64
@@ -1640,6 +1761,10 @@ class FireSimulation:
             # Terrain info (static, but useful for agent)
             "elevation": t.elevation.tolist(),
             "fuel_types": t.fuel_type.tolist(),
+
+            # 2-step weather forecast (deterministic diurnal; wind is expected
+            # value only — NWS Spot Forecast style, NWCG PMS 425)
+            "weather_forecast": self.forecast_weather(steps_ahead=2),
         }
 
     def compute_environmental_rewards(self) -> dict:
