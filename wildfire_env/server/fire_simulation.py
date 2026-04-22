@@ -356,6 +356,13 @@ class FireSimulation:
         # Reward tracking — resets per episode in reset(), persists across ticks.
         self._structures_lost_penalized: set[tuple[int, int]] = set()
         self._fire_extinguished_rewarded: bool = False
+        # Burning cell count at the START of each tick — used by the containment
+        # bonus in compute_environmental_rewards() to detect net fire reduction.
+        self._pre_tick_burning: int = 0
+        # Grid-size normalization: calibration grid is 15×15.  Penalties that
+        # scale with fire extent are dampened on larger grids so GRPO groups have
+        # comparable reward variance regardless of difficulty level.
+        self._grid_norm: float = min(1.0, (15.0 / self.size) ** 1.5)
 
     def reset(self) -> SimulationState:
         """
@@ -366,6 +373,7 @@ class FireSimulation:
         self._rng = np.random.default_rng(self.config.seed + 1000)
         self._structures_lost_penalized = set()
         self._fire_extinguished_rewarded = False
+        self._pre_tick_burning = 0
         s = self.size
 
         # Initialize cell states
@@ -453,6 +461,9 @@ class FireSimulation:
             return self.state
 
         st = self.state
+        # Save burning count BEFORE fire physics so compute_environmental_rewards()
+        # can detect net containment (reward signal for hard task GRPO).
+        self._pre_tick_burning = int(st.total_burning)
         st.step += 1
 
         # 1. Advance time
@@ -1798,30 +1809,35 @@ class FireSimulation:
           every subsequent step.
         - Avoid overpaying passive waiting.  If a fire burns itself out slowly,
           that should not beat faster containment by active suppression.
+        - Grid-size normalise structural penalties (self._grid_norm) so hard
+          25×25 episodes don't drown GRPO groups in uniform negative reward.
+          Calibration: 15×15 → norm=1.0, 25×25 → norm≈0.46.
         """
         if self.state is None:
             return {}
 
         st = self.state
         rewards = {}
+        gn = self._grid_norm  # grid-size normalisation factor
         burning_positions = np.argwhere(st.cell_state == STATE_BURNING)
 
         # ── Structure damage ──
         # Burning: per-step urgency signal — act NOW to save the structure.
         # Lost: one-time penalty when a structure transitions to BURNED.
+        # Scaled by gn so larger-grid episodes don't drown gradient signal.
         for s in self.terrain.structures:
             r, c = s["row"], s["col"]
             if st.cell_state[r, c] == STATE_BURNING:
-                rewards[f"structure_burning_{r}_{c}"] = -0.12 * s["priority"]
+                rewards[f"structure_burning_{r}_{c}"] = -0.12 * s["priority"] * gn
             elif st.cell_state[r, c] == STATE_BURNED:
                 if (r, c) not in self._structures_lost_penalized:
-                    rewards[f"structure_lost_{r}_{c}"] = -0.50 * s["priority"]
+                    rewards[f"structure_lost_{r}_{c}"] = -0.50 * s["priority"] * gn
                     self._structures_lost_penalized.add((r, c))
 
-        # ── Structure safe ── only reward intact structures that are still under
-        # some pressure from nearby fire. This keeps the signal focused on
-        # active asset protection rather than passive waiting.
-        threat_radius = 4
+        # ── Structure safe ── only reward intact structures under active fire
+        # pressure. Threat radius scales with grid so it remains proportionally
+        # meaningful on 25×25.
+        threat_radius = max(4, round(4 * self.size / 15))
         for s in self.terrain.structures:
             r, c = s["row"], s["col"]
             if st.cell_state[r, c] in (STATE_STRUCTURE, STATE_SUPPRESSED):
@@ -1833,13 +1849,20 @@ class FireSimulation:
                 if nearest_fire_distance <= threat_radius:
                     rewards[f"structure_safe_{r}_{c}"] = 0.003 * s["priority"]
 
-        # ── Cells suppressed ── reward each BURNING → SUPPRESSED transition
-        # since the last reward computation.  The agent cannot game this by
-        # re-burning cells because it does not control ignition — fire
-        # spreads via physics.
+        # ── Cells suppressed ── reward each BURNING → SUPPRESSED transition.
+        # Increased from 0.04 to 0.06 to give stronger immediate positive signal
+        # on hard tasks where the agent can only limit — not prevent — damage.
         if st.cells_suppressed_this_step > 0:
-            rewards["cells_suppressed"] = 0.04 * st.cells_suppressed_this_step
+            rewards["cells_suppressed"] = 0.06 * st.cells_suppressed_this_step
             st.cells_suppressed_this_step = 0
+
+        # ── Containment bonus ── reward any net reduction in burning cells this
+        # tick (pre-tick count minus current count, after fire physics ran).
+        # This gives differentiated signal even in losing episodes: GRPO groups
+        # need within-group variance to produce non-zero advantages.
+        net_contained = self._pre_tick_burning - int(st.total_burning)
+        if net_contained > 0:
+            rewards["containment"] = 0.018 * net_contained
 
         # ── Threatened cells protected ── reward preventive work only when it
         # upgrades cells that were actually at risk from nearby fire or heat.
@@ -1847,11 +1870,11 @@ class FireSimulation:
             rewards["cells_protected"] = 0.0025 * min(st.cells_protected_this_step, 12)
             st.cells_protected_this_step = 0
 
-        # ── Active fire pressure ── a small ongoing penalty while fire remains
-        # active. This encourages earlier containment and stops "wait it out"
-        # behavior from collecting better reward than decisive action.
+        # ── Active fire pressure ── small ongoing penalty while fire burns.
+        # Reduced from 0.008 to 0.005 and capped at 8 cells (was 10) to avoid
+        # dominating the reward signal when fire is large and uncontrollable.
         if st.total_burning > 0:
-            rewards["active_fire_pressure"] = -0.008 * min(st.total_burning, 10)
+            rewards["active_fire_pressure"] = -0.005 * min(st.total_burning, 8)
 
         # ── Fire extinguished ── one-time bonus when all fires are out.
         if st.total_burning == 0 and st.step > 0 and not self._fire_extinguished_rewarded:

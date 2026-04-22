@@ -95,26 +95,29 @@ TASK_GOALS = {
 # Dispatch costs — reflects real resource expense differences.
 # Aerial assets cost more (fuel, maintenance, flight hours).
 # Backfire carries highest ground cost (reflects risk, IC authorization overhead).
+# Reduced by ~25 % from original calibration: training data (40 iters) showed
+# action costs were adding drag that made all hard-task returns uniformly
+# negative, collapsing within-group GRPO variance.
 MISSION_COST = {
-    "direct_attack": -0.003,
-    "line_construction": -0.005,
-    "wet_line": -0.004,
-    "water_drop": -0.008,
-    "retardant_drop": -0.012,
-    "point_protection": -0.004,
-    "backfire": -0.015,
-    "staging": -0.001,
+    "direct_attack": -0.0022,
+    "line_construction": -0.0037,
+    "wet_line": -0.0030,
+    "water_drop": -0.0060,
+    "retardant_drop": -0.0090,
+    "point_protection": -0.0030,
+    "backfire": -0.0112,
+    "staging": -0.0008,
 }
 
 # Per-resource dispatch surcharge. This keeps the reward aware of which
 # assets were committed, not just which mission label was chosen.
 RESOURCE_DISPATCH_COST = {
-    "crews": -0.0005,
-    "engines": -0.0010,
-    "helicopters": -0.0025,
-    "airtankers": -0.0040,
-    "dozers": -0.0015,
-    "smokejumpers": -0.0025,
+    "crews": -0.0004,
+    "engines": -0.0008,
+    "helicopters": -0.0019,
+    "airtankers": -0.0030,
+    "dozers": -0.0011,
+    "smokejumpers": -0.0019,
 }
 
 # Resource → allowed missions.  Based on NWCG resource typing.
