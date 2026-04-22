@@ -10,22 +10,49 @@ Usage:
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import os
-
-# Must be set before torch is imported — reduces CUDA memory fragmentation.
-os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
-
 import sys
 import time
+
+# Must be set before torch is imported - reduces CUDA memory fragmentation.
+os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from train_grpo import Config, train
+_REQUIRED_TRAINING_MODULES = ("torch", "xgrammar", "peft", "unsloth")
+
+
+def _validate_training_modules() -> None:
+    missing: list[str] = []
+    for module_name in _REQUIRED_TRAINING_MODULES:
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(module_name)
+
+    if missing:
+        joined = ", ".join(missing)
+        raise ModuleNotFoundError(
+            "Missing training dependencies: "
+            f"{joined}. Install them with `pip install -e .[train]` "
+            "or `uv pip install -e .[train]`."
+        )
+
+    torch = importlib.import_module("torch")
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "GRPO smoke test requires a CUDA GPU. This environment is CPU-only, "
+            "so the training stack cannot be validated end to end here."
+        )
 
 
 def main():
+    _validate_training_modules()
+
+    from train_grpo import Config, train
+
     config = Config(
         group_size=2,          # 2 trajectories (instead of 8)
         max_episode_steps=5,   # 5 steps per episode (instead of 20)
@@ -45,7 +72,7 @@ def main():
     try:
         train(config)
     except Exception as exc:
-        print(f"\n✗ SMOKE TEST FAILED: {exc}")
+        print(f"\nSMOKE TEST FAILED: {exc}")
         raise
 
     elapsed = time.time() - t0
@@ -74,7 +101,7 @@ def main():
             assert not math.isinf(val), f"{key} is inf"
 
     print(f"\n{'=' * 60}")
-    print(f"✓ Smoke test PASSED in {elapsed:.1f}s")
+    print(f"Smoke test PASSED in {elapsed:.1f}s")
     print("Pipeline is functional. Run train_grpo.py for full training.")
     print("=" * 60)
 

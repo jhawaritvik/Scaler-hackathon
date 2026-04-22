@@ -96,27 +96,34 @@ ASPECT_DRYING_MULT = np.array([
 # ground staging, and off-grid positions for airbases.
 # ---------------------------------------------------------------------------
 
-# Ground outposts sit on the grid edge (corners and midpoints of each side).
-# These represent road junctions where crews, engines, and dozers stage.
-_GROUND_OUTPOST_CANDIDATES = [
-    (0.0, 0.0),       # NW corner
-    (0.0, 7.0),       # N midpoint
-    (0.0, 14.0),      # NE corner
-    (7.0, 0.0),       # W midpoint
-    (7.0, 14.0),      # E midpoint
-    (14.0, 0.0),      # SW corner
-    (14.0, 7.0),      # S midpoint
-    (14.0, 14.0),     # SE corner
-]
+def _ground_outpost_candidates(size: int) -> list[tuple[float, float]]:
+    """Ground outpost positions for the current grid size."""
+    max_idx = float(size - 1)
+    mid_idx = float((size - 1) // 2)
+    return [
+        (0.0, 0.0),           # NW corner
+        (0.0, mid_idx),       # N midpoint
+        (0.0, max_idx),       # NE corner
+        (mid_idx, 0.0),       # W midpoint
+        (mid_idx, max_idx),   # E midpoint
+        (max_idx, 0.0),       # SW corner
+        (max_idx, mid_idx),   # S midpoint
+        (max_idx, max_idx),   # SE corner
+    ]
 
-# Air bases sit off the grid (helicopters/airtankers need helipads/runways).
-_AIRBASE_CANDIDATES = [
-    (-4.0, 7.0),      # North helibase
-    (18.0, 7.0),      # South helibase
-    (-8.0, 7.0),      # Far north airfield
-    (7.0, -5.0),      # West airfield
-    (7.0, 19.0),      # East airfield
-]
+
+def _airbase_candidates(size: int) -> list[tuple[float, float]]:
+    """Off-grid airbase positions scaled to the current grid size."""
+    mid_idx = float((size - 1) // 2)
+    south_idx = float(size + 3)
+    east_idx = float(size + 4)
+    return [
+        (-4.0, mid_idx),      # North helibase
+        (south_idx, mid_idx), # South helibase
+        (-8.0, mid_idx),      # Far north airfield
+        (mid_idx, -5.0),      # West airfield
+        (mid_idx, east_idx),  # East airfield
+    ]
 
 # Outpost naming: NATO phonetic alphabet
 _OUTPOST_NAMES = [
@@ -371,12 +378,12 @@ def _generate_outposts(
     n_air = _draw_int(rng, *spec.num_air_bases)
 
     # Pick ground positions (shuffle candidates, take first n)
-    ground_pool = list(_GROUND_OUTPOST_CANDIDATES)
+    ground_pool = _ground_outpost_candidates(size)
     rng.shuffle(ground_pool)
     ground_positions = ground_pool[:n_ground]
 
     # Pick air positions
-    air_pool = list(_AIRBASE_CANDIDATES)
+    air_pool = _airbase_candidates(size)
     rng.shuffle(air_pool)
     air_positions = air_pool[:n_air]
 

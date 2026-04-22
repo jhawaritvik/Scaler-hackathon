@@ -61,46 +61,99 @@ Supported target types:
 
 Each observation includes:
 
-- task goal and episode progress
-- current fire cells and heat warnings
+- task goal and episode progress, plus a natural-language `action_guide`
+- fire cells and heat warnings — **filtered by fog-of-war** sensor range
 - structures with priority and status
-- weather and time fields
+- current weather (temp, humidity, wind) and a **2-step Spot Forecast**
+  (NWCG PMS 425) with diurnal temperature/humidity and wind trend
 - full fleet status, active missions, and outposts
+- `visible_cell_count` and `fog_of_war_active` flags
 - dense step reward plus action/error summaries
+
+### Partial observability (fog of war)
+
+Only cells within sensor range of a deployed resource are fully visible;
+the rest show as `?` in the grid string. Per-resource sensor radii
+(Manhattan cells) are calibrated from PMC 2017 FLIR reconnaissance data:
+
+| resource | radius | radius (standby) |
+|---|---:|---:|
+| helicopter | 6 | 2 |
+| airtanker | 5 | 2 |
+| crew / smokejumper | 4 | 2 |
+| engine / dozer | 3 | 2 |
+
+`burning_cells` (total count) remains unmasked — the agent knows the fire
+exists but must deploy air assets to localise it. This is the core
+incident-commander tension the environment models.
+
+### LCES safety doctrine
+
+Ground-resource assignments (`direct_attack`, `line_construction`,
+`backfire`, `wet_line`) are checked against NWCG LCES (Lookouts /
+Communications / Escape Routes / Safety Zones). If a burning cell is
+immediately adjacent to the target and no escape cell (firebreak, water,
+burned, suppressed) is reachable within 2 cells, a `-0.03` penalty is
+applied per Butler & Cohen (1998) safety-zone criterion.
 
 ## Tasks
 
-Three graded tasks are included:
+Three graded difficulty levels with cellular-automaton fire spread
+(Alexandridis 2008, Rothermel 1972):
 
-- `easy`: single ignition, better moisture, more water, lower-value assets
-- `medium`: hotter, drier, delayed re-ignition, and a tighter response window
-- `hard`: multi-ignition, already-active, wind-driven, scarce resources, highest-value assets
+| task | grid | max steps | ignitions | structures | crews | helicopter | airtanker | wind (km/h) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| easy | 15×15 | 20 | 1 | 2-3 (P1) | 3-5 | 1-2 | 0-1 | 5-12 |
+| medium | 15×15 | 15 | 2 + 1 delayed | 3-4 (≤P2) | 2-4 | 1-2 | 0-1 | 10-20 |
+| hard | 25×25 | 25 | 2 + 1-2 delayed | 3-5 (≤P3) | 2-3 | 1 | 0-1 | 15-25 |
 
 Each task has a deterministic grader that returns `0.0` to `1.0` using:
 
-- `60%` structure protection
+- `60%` structure protection (priority-weighted)
 - `30%` area preservation
 - `10%` containment efficiency
 
 ## Reward
 
-The reward gives partial progress signals over the trajectory:
+Reward signals are grid-size normalised on structural penalties (factor
+`gn = min(1, (15/size)^1.5)` — 1.00 on 15×15, ~0.46 on 25×25) so GRPO
+group variance stays meaningful across difficulty levels.
 
 | Signal | Amount | Trigger |
 |---|---:|---|
-| `structure_burning` | `-0.12 × priority` | Each step a structure cell is burning |
-| `structure_lost` | `-0.50 × priority` | Once when a structure transitions to burned |
+| `structure_burning` | `-0.12 × priority × gn` | Each step a structure cell is burning |
+| `structure_lost` | `-0.50 × priority × gn` | Once when a structure transitions to burned |
 | `structure_safe` | `+0.003 × priority` | Each step an intact structure remains under nearby threat |
-| `cells_suppressed` | `+0.04` per cell | Each burning cell extinguished that step |
+| `cells_suppressed` | `+0.06` per cell | Each burning cell extinguished that step |
 | `cells_protected` | `+0.0025` per cell | Each newly protected threatened unburned cell, capped at 12 cells per step |
-| `active_fire_pressure` | `-0.008 × min(burning_cells, 10)` | Each step while fire remains active |
+| `containment` | `+0.018 × net cells` | Net burning-cell reduction, **gated on active suppression** (prevents passive-burnout exploit) |
+| `active_fire_pressure` | `-0.005 × min(burning, 8)` | Each step while fire remains active |
 | `fire_extinguished` | `+0.30` to `+0.70` | Once when all burning cells are out, scaled by containment speed |
-| Mission dispatch cost | `-0.001` to `-0.015` | Per assignment, based on mission type |
-| Resource dispatch surcharge | `-0.0005` to `-0.0040` | Additional per assignment, based on resource type |
+| Mission dispatch cost | `-0.0008` to `-0.0112` | Per assignment, based on mission type |
+| Resource dispatch surcharge | `-0.0004` to `-0.0030` | Additional per assignment, based on resource type |
+| `idle_penalty` | `-0.005 × min(avail, 4)` | Empty `assignments[]` while fire is burning and units are available |
+| LCES violation | `-0.03` | Hazardous ground assignment without a reachable safety zone |
 | Invalid action | `-0.05` | Rejected assignment |
 | Low-impact action | `-0.02` | Wasteful assignment with negligible effect |
 
-The reward has been audited against the grader using `reward_audit.py`.
+### Anti-reward-hacking design
+
+Per the hackathon guide on reward-hacking (§8), multiple independent
+checks protect the training signal:
+
+- **Format enforcement**: XGrammar-constrained decoding + Pydantic
+  validation — malformed actions can't reach the environment.
+- **Causal containment gate**: `containment` only pays when the agent
+  actively suppressed at least one cell that tick — natural fuel
+  burnout earns nothing.
+- **No free no-ops**: `idle_penalty` scales with available units when
+  the agent skips action while fire burns.
+- **Single-use penalties**: `structure_lost` fires once per structure;
+  `fire_extinguished` fires once per episode.
+- **Duplicate-dispatch block**: assigning the same unit twice in a step
+  triggers `INVALID_ACTION_PENALTY`.
+- **Min-step guard**: episodes cannot terminate before 3-5 steps
+  (`min_steps_before_early_end`) to prevent early-exit reward farming.
 
 ## Setup
 
@@ -125,14 +178,29 @@ docker build -t wildfire-env .
 docker run -p 8000:8000 wildfire-env
 ```
 
+### Live viewer
+
+A websocket-streaming demo at `/demo` renders episodes in real time:
+
+```
+http://localhost:8000/demo
+```
+
+The grid resizes automatically for hard-task 25×25 episodes.
+
 ## Baselines
 
-Deterministic heuristic baseline via `/baseline`:
+Deterministic heuristic baseline via `/baseline` on the default seeded tasks:
 
-- `easy`: `0.9950`
-- `medium`: `0.7954`
-- `hard`: `0.1027`
-- average: `0.6310`
+| task | heuristic score | seed |
+|---|---:|---:|
+| easy | 0.3196 | 42 |
+| medium | 0.3549 | 67 |
+| hard | 0.0982 | 12 |
+
+These values come from the current fog-of-war environment and reflect the
+default single-seed `/baseline` endpoint, not an older multi-seed evaluation
+run from before the environment changes.
 
 LLM baseline script:
 
@@ -141,9 +209,26 @@ LLM baseline script:
 - reads `HF_TOKEN`, `API_BASE_URL`, and `MODEL_NAME`
 - runs explicit seeded task episodes for reproducibility
 
+## Training
+
+A multi-turn GRPO pipeline lives in `train_grpo.py`. Stack:
+Qwen3-1.7B (4-bit QLoRA via Unsloth) + XGrammar-constrained decoding +
+hand-rolled GRPO loop (TRL's GRPOTrainer is single-turn only; multi-turn
+trajectory advantages require a custom loop).
+
+Install training extras with:
+
+```bash
+.\.venv\Scripts\python.exe -m pip install -e .[train]
+```
+
+The training path requires a CUDA GPU. On a CPU-only machine, `smoke_test.py`
+now fails fast with a clear preflight error instead of a long stack trace.
+
 ## Submission Files
 
 - root inference script: `inference.py`
 - root Dockerfile: `Dockerfile`
 - environment manifest: `openenv.yaml`
 - detailed environment docs: `wildfire_env/README.md`
+- training pipeline: `train_grpo.py` (on `grpo-wildfire-training` branch)
