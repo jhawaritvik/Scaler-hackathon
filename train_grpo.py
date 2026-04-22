@@ -75,21 +75,21 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 @dataclass
 class Config:
     model_name: str = "Qwen/Qwen3-1.7B"
-    task_curriculum: tuple = (("medium", 0, 25), ("hard", 25, 40))
+    task_curriculum: tuple = (("medium", 0, 30), ("hard", 30, 60))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
-        "medium": [67, 101, 201, 301],
+        "medium": [67, 101, 201, 401],   # replaced 301 — confirmed dead-zone in 40-iter run
         "hard":   [12, 102, 202, 302],
     })
     group_size: int = 4
     seeds_per_iter: int = 2         # base seeds sampled per iter; group_size split across them
     inner_epochs: int = 4
     micro_batch_size: int = 1       # sequences per optimizer.step(); each seq backprops alone
-    max_episode_steps: int = 20
+    max_episode_steps: int = 25       # match hard task horizon (medium still stops at its own max_steps=20)
     max_new_tokens: int = 256       # max tokens generated per action
     learning_rate: float = 3e-5
     lr_min: float = 5e-6            # cosine schedule end LR
-    warmup_iters: int = 3           # linear warmup before cosine — kills iter-0 loss spike
+    warmup_iters: int = 5           # linear warmup before cosine — kills iter-0 loss spike
     weight_decay: float = 0.01      # AdamW weight decay (mild regularizer on LoRA params)
     lora_rank: int = 16
     lora_alpha: int = 32
@@ -98,7 +98,7 @@ class Config:
     lora_target_modules: tuple = ("q_proj", "k_proj", "v_proj", "o_proj")
     kl_coef: float = 0.08           # raised from 0.04 — stronger anchor to ref policy
     clip_range: float = 0.2
-    total_iterations: int = 40
+    total_iterations: int = 60
     rollout_temperature: float = 1.1
     rollout_top_p: float = 0.95
     rollout_top_k: int = 50
@@ -112,7 +112,7 @@ class Config:
 # module's HF_TOKEN check at import time)
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a 15x15 terrain grid.
+SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a terrain grid (easy/medium: 15×15, hard: 25×25).
 
 Each step you receive a JSON observation and must respond with a JSON action.
 
@@ -155,6 +155,12 @@ STRATEGY:
 - If no fire is present, stage resources near likely ignition zones.
 - You may issue multiple assignments per step.
 
+OBSERVATION SIGNALS:
+- forecast: next 1-2 steps of wind/temp/humidity — position units upwind of projected spread.
+- visibility.fog_of_war_active: when true, fire_details/heat_warnings only cover cells within
+  sensor range of deployed units. burning_cells (total count) is still unmasked.
+  Deploy helicopters/airtankers early to scout unseen terrain (they have the largest sensor radius).
+
 Return ONLY valid JSON. No explanation, no code blocks."""
 
 
@@ -184,6 +190,21 @@ def _build_user_prompt(obs: WildfireObservation) -> str:
                 "temperature_c": round(obs.temperature, 1),
                 "humidity": round(obs.humidity, 2),
             },
+            "forecast": [
+                {
+                    "step": fc.get("step"),
+                    "minutes_ahead": fc.get("minutes_ahead"),
+                    "temp_c": round(float(fc.get("temperature", 0.0)), 1),
+                    "humidity": round(float(fc.get("humidity", 0.0)), 2),
+                    "wind_speed_kmh": round(float(fc.get("wind_speed_expected", 0.0)), 1),
+                    "wind_direction_deg": round(float(fc.get("wind_direction_current", 0.0)), 1),
+                }
+                for fc in (obs.weather_forecast or [])[:2]
+            ],
+            "visibility": {
+                "fog_of_war_active": obs.fog_of_war_active,
+                "visible_cell_count": obs.visible_cell_count,
+            },
             "structures": [
                 {
                     "id": s.structure_id,
@@ -194,10 +215,6 @@ def _build_user_prompt(obs: WildfireObservation) -> str:
                 }
                 for s in obs.structures
             ],
-            "wind": {
-                "speed_kmh": round(obs.wind_speed, 1),
-                "direction_deg": round(obs.wind_direction, 1),
-            },
         },
         indent=2,
     )
@@ -714,7 +731,7 @@ def train(config: Config):
     print(f"Loading {config.model_name} (4-bit QLoRA) …")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model_name,
-        max_seq_length=2048,
+        max_seq_length=3072,           # raised from 2048 — 25×25 hard obs + action_guide approach 2k tokens
         dtype=None,             # auto: bf16 on Ampere+, fp16 otherwise
         load_in_4bit=True,      # Unsloth handles BitsAndBytesConfig internally
         fast_inference=False,   # REQUIRED: enables HF model.generate() + LogitsProcessors
