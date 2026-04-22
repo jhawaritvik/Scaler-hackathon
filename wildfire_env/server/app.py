@@ -205,12 +205,43 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
     ))
 
     # ── Structure score (60%) ──
-    lost_statuses = {"burning", "burned", "lost", "BURNING", "BURNED", "LOST"}
-    total_priority = sum(s.get("priority", 1) for s in req.structures) if req.structures else 1
-    saved_priority = sum(
-        s.get("priority", 1) for s in req.structures
-        if s.get("status", "safe") not in lost_statuses
-    )
+    lost_statuses = {"burning", "burned", "lost"}
+    expected_structures: list[dict] = []
+    for index, structure in enumerate(terrain.structures, start=1):
+        expected_structures.append(
+            {
+                "structure_id": f"structure_{index}",
+                "row": int(structure["row"]),
+                "col": int(structure["col"]),
+                "priority": int(structure["priority"]),
+            }
+        )
+
+    reported_by_id: dict[str, dict] = {}
+    reported_by_pos: dict[tuple[int, int], dict] = {}
+    for structure in req.structures:
+        structure_id = structure.get("structure_id")
+        if isinstance(structure_id, str) and structure_id:
+            reported_by_id[structure_id] = structure
+
+        row = structure.get("row")
+        col = structure.get("col")
+        if isinstance(row, int) and isinstance(col, int):
+            reported_by_pos[(row, col)] = structure
+
+    use_order_fallback = len(req.structures) == len(expected_structures)
+    total_priority = sum(item["priority"] for item in expected_structures) or 1
+    saved_priority = 0
+    for index, expected in enumerate(expected_structures):
+        reported = reported_by_id.get(expected["structure_id"])
+        if reported is None:
+            reported = reported_by_pos.get((expected["row"], expected["col"]))
+        if reported is None and use_order_fallback:
+            reported = req.structures[index]
+
+        status = str((reported or {}).get("status", "lost")).lower()
+        if status not in lost_statuses:
+            saved_priority += expected["priority"]
     structure_score = saved_priority / max(1, total_priority)
 
     # ── Area preservation score (30%) ──
@@ -243,6 +274,8 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
             "weights": {"structure": 0.60, "area": 0.30, "efficiency": 0.10},
             "saved_priority": saved_priority,
             "total_priority": total_priority,
+            "reported_structures": len(req.structures),
+            "expected_structures": len(expected_structures),
             "cells_damaged": cells_damaged,
             "total_burnable": total_burnable,
         },
@@ -266,10 +299,12 @@ def _heuristic_action(obs: WildfireObservation) -> WildfireAction:
     if obs.fire_details:
         best = max(obs.fire_details, key=lambda f: f.intensity)
         target_point = GridPoint(row=best.row, col=best.col)
+    else:
+        return WildfireAction()
 
     for unit in obs.fleet_units:
-        if unit.status != "available" or target_point is None:
-            break
+        if unit.status != "available":
+            continue
 
         rtype = unit.resource_type
         if rtype in ("crews", "engines", "smokejumpers"):

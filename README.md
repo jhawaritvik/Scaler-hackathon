@@ -103,9 +103,9 @@ Three graded difficulty levels with cellular-automaton fire spread
 
 | task | grid | max steps | ignitions | structures | crews | helicopter | airtanker | wind (km/h) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| easy | 15×15 | 20 | 1 | 2-3 (≤P2) | 1-2 | 0-1 | 0 | 5-12 |
-| medium | 15×15 | 20 | 2 + 1 delayed | 3-4 (≤P2) | 2-4 | 1-2 | 0-1 | 10-20 |
-| hard | 25×25 | 25 | 2 + 1-2 delayed | 3-5 (P3) | 2-3 | 1 | 0-1 | 15-25 |
+| easy | 15×15 | 20 | 1 | 2-3 (P1) | 3-5 | 1-2 | 0-1 | 5-12 |
+| medium | 15×15 | 15 | 2 + 1 delayed | 3-4 (≤P2) | 2-4 | 1-2 | 0-1 | 10-20 |
+| hard | 25×25 | 25 | 2 + 1-2 delayed | 3-5 (≤P3) | 2-3 | 1 | 0-1 | 15-25 |
 
 Each task has a deterministic grader that returns `0.0` to `1.0` using:
 
@@ -190,18 +190,17 @@ The grid resizes automatically for hard-task 25×25 episodes.
 
 ## Baselines
 
-Deterministic heuristic baseline via `/baseline` (after curriculum and
-reward overhaul):
+Deterministic heuristic baseline via `/baseline` on the default seeded tasks:
 
-| task | heuristic mean | seeds |
-|---|---:|---|
-| easy | 0.79 | [42, 100, 200, 300] |
-| medium | 0.38 | [67, 101, 201, 131] |
-| hard | 0.20 | [12, 102, 202, 302] |
+| task | heuristic score | seed |
+|---|---:|---:|
+| easy | 0.3196 | 42 |
+| medium | 0.3549 | 67 |
+| hard | 0.0982 | 12 |
 
-Per hackathon guide §1 ("hard enough to be interesting, not so hard that
-the model never succeeds"), hard was softened after the 40-iter run: the
-heuristic was at 0.10, leaving no demonstrable headroom above baseline.
+These values come from the current fog-of-war environment and reflect the
+default single-seed `/baseline` endpoint, not an older multi-seed evaluation
+run from before the environment changes.
 
 LLM baseline script:
 
@@ -212,11 +211,19 @@ LLM baseline script:
 
 ## Training
 
-A multi-turn GRPO pipeline lives on the `grpo-wildfire-training` branch
-(`train_grpo.py`). Stack: Qwen3-1.7B (4-bit QLoRA via Unsloth) +
-XGrammar-constrained decoding + hand-rolled GRPO loop (TRL's GRPOTrainer
-is single-turn only; multi-turn trajectory advantages require a custom
-loop). Curriculum: easy 0-10 → medium 10-35 → hard 35-60.
+A multi-turn GRPO pipeline lives in `train_grpo.py`. Stack:
+Qwen3-1.7B (4-bit QLoRA via Unsloth) + XGrammar-constrained decoding +
+hand-rolled GRPO loop (TRL's GRPOTrainer is single-turn only; multi-turn
+trajectory advantages require a custom loop).
+
+Install training extras with:
+
+```bash
+.\.venv\Scripts\python.exe -m pip install -e .[train]
+```
+
+The training path requires a CUDA GPU. On a CPU-only machine, `smoke_test.py`
+now fails fast with a clear preflight error instead of a long stack trace.
 
 ## Submission Files
 
