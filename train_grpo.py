@@ -78,7 +78,7 @@ class Config:
     task_curriculum: tuple = (("medium", 0, 30), ("hard", 30, 60))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
-        "medium": [67, 101, 201, 401],   # replaced 301 — confirmed dead-zone in 40-iter run
+        "medium": [67, 101, 201, 131],   # replaced 301 (dead-zone); 131 heuristic ≈ 0.38, aligned with pool
         "hard":   [12, 102, 202, 302],
     })
     group_size: int = 4

@@ -1820,6 +1820,9 @@ class FireSimulation:
         rewards = {}
         gn = self._grid_norm  # grid-size normalisation factor
         burning_positions = np.argwhere(st.cell_state == STATE_BURNING)
+        # Snapshot suppression count before it is zeroed in the cells_suppressed
+        # block below — the containment bonus uses it to require causal action.
+        suppressed_this_tick = int(st.cells_suppressed_this_step)
 
         # ── Structure damage ──
         # Burning: per-step urgency signal — act NOW to save the structure.
@@ -1856,13 +1859,16 @@ class FireSimulation:
             rewards["cells_suppressed"] = 0.06 * st.cells_suppressed_this_step
             st.cells_suppressed_this_step = 0
 
-        # ── Containment bonus ── reward any net reduction in burning cells this
+        # ── Containment bonus ── reward net reduction in burning cells this
         # tick (pre-tick count minus current count, after fire physics ran).
-        # This gives differentiated signal even in losing episodes: GRPO groups
-        # need within-group variance to produce non-zero advantages.
-        net_contained = self._pre_tick_burning - int(st.total_burning)
-        if net_contained > 0:
-            rewards["containment"] = 0.018 * net_contained
+        # Gated on suppressed_this_tick > 0: without this gate the agent is
+        # paid when fire self-extinguishes from fuel exhaustion (passive
+        # burnout exploit). Requiring causal suppression ties the bonus to
+        # action taken, preserving within-group variance for GRPO.
+        if suppressed_this_tick > 0:
+            net_contained = self._pre_tick_burning - int(st.total_burning)
+            if net_contained > 0:
+                rewards["containment"] = 0.018 * net_contained
 
         # ── Threatened cells protected ── reward preventive work only when it
         # upgrades cells that were actually at risk from nearby fire or heat.

@@ -142,6 +142,13 @@ AERIAL_DROP_RESOURCES = {"helicopters", "airtankers"}
 INVALID_ACTION_PENALTY = -0.05
 LOW_IMPACT_ACTION_PENALTY = -0.02
 
+# Idle penalty: scales with available units when assignments[] is empty and
+# fire is actively burning. Closes the "empty-action is free" exploit where
+# the optimal strategy on a losing scenario is to sit out action costs and
+# collect the containment bonus while fire self-extinguishes.
+IDLE_PENALTY_PER_UNIT = -0.005
+IDLE_PENALTY_MAX_UNITS = 4
+
 # ── LCES safety check ──
 # LCES (Lookouts / Communications / Escape Routes / Safety Zones) is the
 # foundational safety doctrine for wildland firefighters.
@@ -1146,7 +1153,7 @@ class WildfireEnvironment(Environment):
                 _add_disc(unit.standby_row, unit.standby_col, self._FOW_OUTPOST_RADIUS)
             else:
                 # En route, operating, or returning — full sensor footprint
-                _add_disc(unit.current_row, unit.current_col, radius)
+                _add_disc(unit.position_row, unit.position_col, radius)
 
         # Structures always reveal their immediate neighbourhood
         for s in self._sim.terrain.structures:
@@ -1602,10 +1609,21 @@ class WildfireEnvironment(Environment):
         Queue one or more resource assignments, advance logistics and fire
         dynamics by one tick, and return the resulting observation.
         """
-        self._require_sim()
+        sim = self._require_sim()
 
         reward_delta = self._schedule_assignments(action)
         dispatch_summary = self._last_action_summary
+
+        # Idle penalty: if the agent issued no assignments, units are sitting
+        # available, and fire is actively burning, charge per available unit.
+        # Pre-tick burning is the right gate — we want to punish sitting on
+        # resources while the fire is burning, not while we're between fires.
+        idle_penalty = 0.0
+        if not action.assignments and sim.state is not None and sim.state.total_burning > 0:
+            available_units = sum(1 for u in self._fleet_units if u.status == "available")
+            if available_units > 0:
+                idle_penalty = IDLE_PENALTY_PER_UNIT * min(available_units, IDLE_PENALTY_MAX_UNITS)
+
         fleet_events, fleet_reward_delta = self._progress_fleet()
 
         if fleet_events:
@@ -1615,10 +1633,11 @@ class WildfireEnvironment(Environment):
             else:
                 self._last_action_summary = event_summary
 
-        sim = self._require_sim()
         sim_state = sim.tick()
         env_rewards = sim.compute_environmental_rewards()
-        total_step_reward = reward_delta + fleet_reward_delta + sum(env_rewards.values())
+        total_step_reward = (
+            reward_delta + fleet_reward_delta + idle_penalty + sum(env_rewards.values())
+        )
 
         self._total_reward += total_step_reward
         self._state.step_count = sim_state.step
@@ -1630,6 +1649,7 @@ class WildfireEnvironment(Environment):
         observation.metadata["reward_components"] = env_rewards
         observation.metadata["action_cost"] = reward_delta
         observation.metadata["fleet_effect_penalty"] = fleet_reward_delta
+        observation.metadata["idle_penalty"] = idle_penalty
         return observation
 
     @property
