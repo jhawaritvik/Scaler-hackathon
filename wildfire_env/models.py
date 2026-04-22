@@ -235,3 +235,16 @@ class WildfireObservation(Observation):
             "wind_speed_expected is the diurnal trend without stochastic noise."
         ),
     )
+    visible_cell_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of grid cells currently observable by deployed resources (fog-of-war).",
+    )
+    fog_of_war_active: bool = Field(
+        default=True,
+        description=(
+            "When True, fire_details and heat_warnings only cover cells within "
+            "sensor range of deployed units. Cells outside sensor range are "
+            "shown as '?' in the grid string."
+        ),
+    )

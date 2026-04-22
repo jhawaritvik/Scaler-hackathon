@@ -1643,10 +1643,13 @@ class FireSimulation:
     # ──────────────────────────────────────────────────
 
 
-    def get_grid_string(self) -> str:
+    def get_grid_string(
+        self,
+        visible_cells: set[tuple[int, int]] | None = None,
+    ) -> str:
         """
         Render the grid as a human-readable string.
-        
+
         Uses symbols:
         . = unburned grass/brush/forest
         F = burning
@@ -1655,6 +1658,7 @@ class FireSimulation:
         W = water
         S = structure
         ~ = suppressed
+        ? = outside sensor range (fog of war)
         """
         if self.state is None:
             return ""
@@ -1670,24 +1674,32 @@ class FireSimulation:
         }
 
         lines = []
-        # Header
         header = "   " + " ".join(f"{c:X}" for c in range(self.size))
         lines.append(header)
 
         for r in range(self.size):
             row_str = f"{r:2d} "
             for c in range(self.size):
-                cs = self.state.cell_state[r, c]
-                row_str += symbols.get(cs, "?") + " "
+                if visible_cells is not None and (r, c) not in visible_cells:
+                    row_str += "? "
+                else:
+                    cs = self.state.cell_state[r, c]
+                    row_str += symbols.get(cs, "?") + " "
             lines.append(row_str)
 
         return "\n".join(lines)
 
-    def get_observation_dict(self) -> dict:
+    def get_observation_dict(
+        self,
+        visible_cells: set[tuple[int, int]] | None = None,
+    ) -> dict:
         """
         Get the full observation as a dictionary for the agent.
-        
-        Includes all information the agent needs to make decisions.
+
+        When ``visible_cells`` is provided only fire/heat details inside the
+        fog-of-war sensor footprint are returned.  ``burning_cells`` total is
+        kept unmasked — smoke columns are visible from far away regardless of
+        which units are nearby.
         """
         if self.state is None:
             return {}
@@ -1695,18 +1707,19 @@ class FireSimulation:
         st = self.state
         t = self.terrain
 
-        # Fire positions
+        # Fire positions — masked by fog of war if active
         fire_cells = []
         for r in range(self.size):
             for c in range(self.size):
                 if st.cell_state[r, c] == STATE_BURNING:
-                    fire_cells.append({
-                        "row": int(r), "col": int(c),
-                        "intensity": round(float(st.intensity[r, c]), 2),
-                        "timer": int(st.burn_timer[r, c]),
-                    })
+                    if visible_cells is None or (r, c) in visible_cells:
+                        fire_cells.append({
+                            "row": int(r), "col": int(c),
+                            "intensity": round(float(st.intensity[r, c]), 2),
+                            "timer": int(st.burn_timer[r, c]),
+                        })
 
-        # Structure status
+        # Structure status — structures always report their own cell status
         struct_status = []
         for s in t.structures:
             r, c = s["row"], s["col"]
@@ -1717,20 +1730,24 @@ class FireSimulation:
                 "status": STATE_NAMES.get(st.cell_state[r, c], "unknown"),
             })
 
-        # Heat map for cells approaching ignition
+        # Heat warnings — masked by fog of war
         heat_warnings = []
         for r in range(self.size):
             for c in range(self.size):
                 if st.heat[r, c] > IGNITION_THRESHOLD * 0.5:
                     if st.cell_state[r, c] in (STATE_UNBURNED, STATE_STRUCTURE):
-                        heat_warnings.append({
-                            "row": int(r), "col": int(c),
-                            "heat": round(float(st.heat[r, c]), 2),
-                            "threshold": round(IGNITION_THRESHOLD, 2),
-                        })
+                        if visible_cells is None or (r, c) in visible_cells:
+                            heat_warnings.append({
+                                "row": int(r), "col": int(c),
+                                "heat": round(float(st.heat[r, c]), 2),
+                                "threshold": round(IGNITION_THRESHOLD, 2),
+                            })
+
+        # Total burning count is always unmasked (smoke columns visible from afar)
+        total_burning = int((st.cell_state == STATE_BURNING).sum())
 
         return {
-            "grid": self.get_grid_string(),
+            "grid": self.get_grid_string(visible_cells=visible_cells),
             "step": st.step,
             "max_steps": self.config.max_steps,
             "step_minutes": SIMULATION_STEP_MINUTES,
@@ -1745,8 +1762,9 @@ class FireSimulation:
             "atmospheric_dryness_index": round(st.temperature - st.humidity * 100.0, 1),
             "airflow_potential_peak": round(float(st.airflow_potential.max()), 2),
 
-            # Fire status
-            "burning_cells": len(fire_cells),
+            # Fire status — burning_cells is total (unmasked); fire_details may
+            # be filtered by fog of war
+            "burning_cells": total_burning,
             "burned_cells": st.total_burned,
             "fire_details": fire_cells,
 

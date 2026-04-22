@@ -1,7 +1,7 @@
 """
 Terrain Generator for Wildfire Simulation.
 
-Generates a 15x15 grid with:
+Generates a configurable grid (default 15×15; hard difficulty uses 25×25) with:
   - elevation (0-9): height map using diamond-square-like noise
   - fuel_type (0-3): 0=none/rock, 1=grass, 2=brush, 3=forest
   - aspect (0-7): N,NE,E,SE,S,SW,W,NW — derived from elevation gradient
@@ -908,6 +908,12 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         num_ground_outposts=(1, 2),
         num_air_bases=(1, 1),
         warmup_steps=(2, 2),
+        # 25×25 grid (vs. 15×15 for easy/medium) — widens the strategic space,
+        # gives the trained model clear headroom above the heuristic baseline,
+        # and brings the episode area closer to real large-fire incidents.
+        # 25 steps = ~8.3 sim-hours, long enough for multiple suppression phases.
+        grid_size=25,
+        max_steps=25,
         # Hard already has cascading ignitions at steps 2-6; additional
         # min-step guard not needed, but set to 3 to be consistent.
         min_steps_before_early_end=3,

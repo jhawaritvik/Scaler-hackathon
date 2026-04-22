@@ -260,6 +260,7 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
 def _heuristic_action(obs: WildfireObservation) -> WildfireAction:
     """Rule-based heuristic: attack the highest-intensity burning cell."""
     assignments = []
+    grid_max = (len(obs.fuel_types[0]) - 1) if obs.fuel_types else 14
 
     target_point: GridPoint | None = None
     if obs.fire_details:
@@ -300,7 +301,7 @@ def _heuristic_action(obs: WildfireObservation) -> WildfireAction:
                     target_kind="line",
                     waypoints=[
                         GridPoint(row=ahead_row, col=max(0, target_point.col - 2)),
-                        GridPoint(row=ahead_row, col=min(14, target_point.col + 2)),
+                        GridPoint(row=ahead_row, col=min(grid_max, target_point.col + 2)),
                     ],
                 ),
             ))
@@ -556,11 +557,19 @@ const CELL_COLORS = {0:"#3a7d44",1:"#ff4500",2:"#4a3728",3:"#e8c84a",
                      4:"#1e90ff",5:"#9b59b6",6:"#20b2aa"};
 const RES_COLORS  = {crews:"#3498db",engines:"#e74c3c",helicopters:"#00bcd4",
                      airtankers:"#ff9800",dozers:"#f1c40f",smokejumpers:"#8e44ad"};
-const CELL_SZ = 30, GRID_N = 15;
+// GRID_N and CELL_SZ are derived from the first frame so the viewer adapts to
+// any grid size (easy/medium = 15×15, hard = 25×25).
+let CELL_SZ = 30, GRID_N = 15;
 let ws = null, svgEl, gridCells = [], unitDots = {};
 
-function initGrid() {
+function initGrid(n) {
+  GRID_N = n || 15;
+  // Fit inside a 450px canvas regardless of grid size
+  CELL_SZ = Math.floor(450 / GRID_N);
+  const sz = CELL_SZ * GRID_N;
   svgEl = document.getElementById('grid');
+  svgEl.setAttribute('width',  sz);
+  svgEl.setAttribute('height', sz);
   svgEl.innerHTML = '';
   gridCells = [];
   for (let r = 0; r < GRID_N; r++) {
@@ -582,6 +591,8 @@ function initGrid() {
 
 function renderFrame(data) {
   const states = data.cell_states, intensity = data.cell_intensity;
+  // Re-initialise grid if server reports a different size
+  if (states && states.length !== GRID_N) initGrid(states.length);
   for (let r = 0; r < GRID_N; r++) {
     for (let c = 0; c < GRID_N; c++) {
       const s = states[r][c];
@@ -715,7 +726,7 @@ function drawWindArrow(speed, dirDeg) {
 function startEpisode() {
   if (ws) { ws.close(); ws = null; }
   document.getElementById('score-overlay').style.display = 'none';
-  initGrid();
+  initGrid(GRID_N);
   const task = document.getElementById('task-sel').value;
   const delay = document.getElementById('speed-sl').value;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -732,9 +743,9 @@ document.getElementById('speed-sl').oninput = function() {
   document.getElementById('speed-label').textContent = this.value + 'ms';
 };
 
-// Auto-start on load
+// Auto-start on load — initGrid() with default size; first frame resizes if needed
 window.addEventListener('load', () => {
-  initGrid();
+  initGrid(15);
   startEpisode();
 });
 </script>
@@ -756,8 +767,8 @@ async def demo_stream(
       seed      — integer seed; default is the reproducible baseline seed
       delay_ms  — milliseconds between steps (default: 700)
 
-    Each WebSocket message is a JSON object containing cell_states (15×15
-    int array), cell_intensity (15×15 float array), fleet unit positions,
+    Each WebSocket message is a JSON object containing cell_states (N×N
+    int array), cell_intensity (N×N float array), fleet unit positions,
     weather, forecast, and step metadata.  The final message includes
     ``score`` and ``components`` from the /grader endpoint.
     """

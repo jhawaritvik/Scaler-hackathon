@@ -374,7 +374,10 @@ class WildfireEnvironment(Environment):
             ))
         return obs
 
-    def _build_action_guide(self) -> str:
+    def _build_action_guide(
+        self,
+        visible_cells: set[tuple[int, int]] | None = None,
+    ) -> str:
         """Build a natural-language per-step action guide for LLM agents.
 
         Summarises which units are ready to dispatch (and what missions they
@@ -467,6 +470,16 @@ class WildfireEnvironment(Environment):
         else:
             lines.append("FIRE: simulation not started")
 
+        # ── Visibility / fog-of-war ──
+        if visible_cells is not None and self._sim is not None:
+            grid_size = self._sim.size
+            total_cells = grid_size * grid_size
+            pct = round(100.0 * len(visible_cells) / total_cells)
+            lines.append(
+                f"VISIBILITY: {len(visible_cells)}/{total_cells} cells ({pct}%) — "
+                "cells outside sensor range shown as '?' in grid."
+            )
+
         return "\n".join(lines)
 
     def _build_observation(
@@ -510,11 +523,14 @@ class WildfireEnvironment(Environment):
                 last_action_error=self._last_action_error,
                 action_guide=self._build_action_guide(),
                 weather_forecast=[],
+                visible_cell_count=0,
+                fog_of_war_active=False,
                 done=done,
                 reward=reward,
             )
 
-        obs = self._sim.get_observation_dict()
+        visible_cells = self._compute_visible_cells()
+        obs = self._sim.get_observation_dict(visible_cells=visible_cells)
         fire_details = [FireCellObservation(**item) for item in obs.get("fire_details", [])]
         structures = [StructureObservation(**item) for item in obs.get("structures", [])]
         heat_warnings = [
@@ -556,8 +572,10 @@ class WildfireEnvironment(Environment):
             heat_warnings=heat_warnings,
             elevation=obs.get("elevation", []),
             fuel_types=obs.get("fuel_types", []),
-            action_guide=self._build_action_guide(),
+            action_guide=self._build_action_guide(visible_cells=visible_cells),
             weather_forecast=obs.get("weather_forecast", []),
+            visible_cell_count=len(visible_cells),
+            fog_of_war_active=True,
             done=done,
             reward=reward,
             metadata={
@@ -1077,6 +1095,61 @@ class WildfireEnvironment(Environment):
         work_steps = max(self._estimate_dozer_work_steps(ordered_cells), assignment.commitment_steps)
         cells_per_step = max(1, math.ceil(max(1, len(ordered_cells)) / max(1, work_steps)))
         return work_steps, ordered_cells, cells_per_step, False, True
+
+    # ── Fog-of-War visibility radii (cells) ──────────────────────────────────
+    # Based on:
+    #   PMC (2017): FLIR helicopter swath 5-8 km at 300-750m AGL → ~50-80 cells
+    #   at 100 m/cell, but bounded to 6 for a 15×15 grid (practical coverage).
+    #   Ground crew line-of-sight in smoke-limited terrain: ~400 m → 4 cells.
+    #   Available-at-outpost units conduct local patrols: ~200 m → 2 cells.
+    _FOW_RADII: dict[str, int] = {
+        "helicopters":   6,
+        "airtankers":    5,
+        "crews":         4,
+        "smokejumpers":  4,
+        "engines":       3,
+        "dozers":        3,
+    }
+    _FOW_OUTPOST_RADIUS: int = 2   # standby units observe immediate outpost area
+    _FOW_STRUCTURE_RADIUS: int = 1  # structures always report their immediate neighbourhood
+
+    def _compute_visible_cells(self) -> set[tuple[int, int]]:
+        """Return the set of (row, col) cells observable by current resources.
+
+        Each deployed unit reveals a disc of cells centred on its current
+        position.  Units waiting at an outpost reveal a smaller disc around
+        the outpost.  Each structure always reveals its immediate neighbours
+        (local lookout / sensor presence).
+        """
+        if self._sim is None:
+            return set()
+
+        grid_size = self._sim.size
+        visible: set[tuple[int, int]] = set()
+
+        def _add_disc(row: float, col: float, radius: int) -> None:
+            r0, c0 = int(round(row)), int(round(col))
+            for dr in range(-radius, radius + 1):
+                for dc in range(-radius, radius + 1):
+                    if dr * dr + dc * dc <= radius * radius:
+                        nr, nc = r0 + dr, c0 + dc
+                        if 0 <= nr < grid_size and 0 <= nc < grid_size:
+                            visible.add((nr, nc))
+
+        for unit in self._fleet_units:
+            radius = self._FOW_RADII.get(unit.resource_type, 3)
+            if unit.status == "available":
+                # Standby at outpost — smaller local radius
+                _add_disc(unit.standby_row, unit.standby_col, self._FOW_OUTPOST_RADIUS)
+            else:
+                # En route, operating, or returning — full sensor footprint
+                _add_disc(unit.current_row, unit.current_col, radius)
+
+        # Structures always reveal their immediate neighbourhood
+        for s in self._sim.terrain.structures:
+            _add_disc(s["row"], s["col"], self._FOW_STRUCTURE_RADIUS)
+
+        return visible
 
     def _check_lces(
         self,
