@@ -75,7 +75,7 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 @dataclass
 class Config:
     model_name: str = "Qwen/Qwen3-1.7B"
-    task_curriculum: tuple = (("medium", 0, 30), ("hard", 30, 60))
+    task_curriculum: tuple = (("easy", 0, 10), ("medium", 10, 35), ("hard", 35, 60))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
         "medium": [67, 101, 201, 131],   # replaced 301 (dead-zone); 131 heuristic ≈ 0.38, aligned with pool
