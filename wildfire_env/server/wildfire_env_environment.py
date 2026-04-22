@@ -139,6 +139,34 @@ AERIAL_DROP_RESOURCES = {"helicopters", "airtankers"}
 INVALID_ACTION_PENALTY = -0.05
 LOW_IMPACT_ACTION_PENALTY = -0.02
 
+# ── LCES safety check ──
+# LCES (Lookouts / Communications / Escape Routes / Safety Zones) is the
+# foundational safety doctrine for wildland firefighters.
+# Source: NWCG 10 Standard Firefighting Orders #6 ("Maintain prompt
+# communications with your forces, your supervisor, and adjoining forces")
+# and #8 ("Give terrain and fuels the upper hand"), plus the LCES
+# framework from the NWCG Incident Response Pocket Guide (PMS 461).
+#
+# Quantitative safety zone criterion from Butler & Cohen (1998):
+#   "Calculated Safety Zone Dimensions and Application to Firefighter Safety"
+#   USDA FS Int. Res. Station. Key result: safety zone diameter ≥ 4× flame
+#   height (radiant heat only, flat terrain, no wind). With wind the
+#   required clearance grows substantially.
+#
+# At our 100 m cell pitch and the typical surface fire flame heights this
+# model produces (grass 1-3 m, brush 3-8 m, forest 5-15 m), a single
+# unburning non-fuel cell technically satisfies the geometric threshold.
+# The practical LCES requirement we enforce is therefore: when a burning
+# cell is IMMEDIATELY adjacent (≤ 1 cell) to the assignment target, an
+# escape cell (FIREBREAK / WATER / BURNED / SUPPRESSED) must exist within
+# 2 cells of the target — giving crews a reachable safety zone before the
+# fire cuts off their route.  Grid edge counts as open terrain escape.
+LCES_GROUND_RESOURCES = {"crews", "engines", "smokejumpers", "dozers"}
+LCES_HAZARDOUS_MISSIONS = {"direct_attack", "line_construction", "backfire", "wet_line"}
+LCES_THREAT_RADIUS = 1    # fire this many cells away = active threat
+LCES_ESCAPE_RADIUS = 2    # safety zone must be within this radius
+LCES_VIOLATION_PENALTY = -0.03  # per NWCG 10-Orders #6; not a hard block
+
 POINT_PROTECTION_RADIUS = 1
 MAX_POLYGON_VERTICES = 8
 
@@ -1050,6 +1078,75 @@ class WildfireEnvironment(Environment):
         cells_per_step = max(1, math.ceil(max(1, len(ordered_cells)) / max(1, work_steps)))
         return work_steps, ordered_cells, cells_per_step, False, True
 
+    def _check_lces(
+        self,
+        unit_id: str,
+        target_row: int,
+        target_col: int,
+    ) -> tuple[bool, str]:
+        """Check LCES compliance for a ground-resource assignment.
+
+        Violation condition: a burning cell is immediately adjacent to the
+        target (≤ LCES_THREAT_RADIUS cells) AND no escape cell
+        (FIREBREAK / WATER / BURNED / SUPPRESSED) exists within
+        LCES_ESCAPE_RADIUS cells of the target.
+
+        Grid edge is treated as open-terrain escape (firefighters can
+        exit the map boundary on foot or by air).
+
+        Returns (is_compliant, warning_text).
+
+        Sources:
+          - NWCG 10 Standard Firefighting Orders #6 and #8 (PMS 110)
+          - NWCG LCES framework, Incident Response Pocket Guide PMS 461
+          - Butler & Cohen (1998): safety zone diameter ≥ 4× flame height,
+            USDA FS Intermountain Research Station
+        """
+        sim = self._require_sim()
+        st = sim.state
+
+        # Step 1 — Is there active fire within threat radius?
+        fire_adjacent = False
+        for dr in range(-LCES_THREAT_RADIUS, LCES_THREAT_RADIUS + 1):
+            for dc in range(-LCES_THREAT_RADIUS, LCES_THREAT_RADIUS + 1):
+                nr, nc = target_row + dr, target_col + dc
+                if 0 <= nr < sim.size and 0 <= nc < sim.size:
+                    if st.cell_state[nr, nc] == STATE_BURNING:
+                        fire_adjacent = True
+                        break
+            if fire_adjacent:
+                break
+
+        if not fire_adjacent:
+            return True, ""  # no active threat; LCES not triggered
+
+        # Step 2 — Is there a reachable escape cell within escape radius?
+        _ESCAPE = {STATE_FIREBREAK, STATE_WATER, STATE_BURNED, STATE_SUPPRESSED}
+        for dr in range(-LCES_ESCAPE_RADIUS, LCES_ESCAPE_RADIUS + 1):
+            for dc in range(-LCES_ESCAPE_RADIUS, LCES_ESCAPE_RADIUS + 1):
+                nr, nc = target_row + dr, target_col + dc
+                if 0 <= nr < sim.size and 0 <= nc < sim.size:
+                    if st.cell_state[nr, nc] in _ESCAPE:
+                        return True, ""
+
+        # Step 3 — Grid edge is also a valid escape route
+        if (
+            target_row <= LCES_ESCAPE_RADIUS
+            or target_row >= sim.size - 1 - LCES_ESCAPE_RADIUS
+            or target_col <= LCES_ESCAPE_RADIUS
+            or target_col >= sim.size - 1 - LCES_ESCAPE_RADIUS
+        ):
+            return True, ""
+
+        # LCES violation — active fire with no escape route
+        return False, (
+            f"LCES: {unit_id} at ({target_row},{target_col}) has active fire "
+            f"within {LCES_THREAT_RADIUS} cell(s) and no escape route within "
+            f"{LCES_ESCAPE_RADIUS} cell(s). "
+            f"NWCG 10-Orders #8: establish a firebreak, water, or burned "
+            f"anchor before committing ground forces to the fire line."
+        )
+
     def _schedule_assignment(
         self,
         assignment: ResourceAssignment,
@@ -1092,6 +1189,21 @@ class WildfireEnvironment(Environment):
             if not anchor_valid:
                 return INVALID_ACTION_PENALTY, None, anchor_msg
 
+        # LCES safety check for ground resources on hazardous missions.
+        # Not a hard block — NWCG doctrine allows firefighter judgment — but
+        # the penalty (-0.03) creates training pressure to pre-establish escape
+        # routes before committing crews to the fire line.
+        lces_penalty = 0.0
+        lces_warning = ""
+        if (
+            unit.resource_type in LCES_GROUND_RESOURCES
+            and assignment.mission_type in LCES_HAZARDOUS_MISSIONS
+        ):
+            lces_ok, lces_msg = self._check_lces(unit.unit_id, anchor[0], anchor[1])
+            if not lces_ok:
+                lces_penalty = LCES_VIOLATION_PENALTY
+                lces_warning = lces_msg
+
         dispatch_steps = self._estimate_dispatch_steps(unit, anchor[0], anchor[1])
         return_steps = 0 if not return_after else self._estimate_return_steps(unit, anchor[0], anchor[1])
 
@@ -1116,9 +1228,13 @@ class WildfireEnvironment(Environment):
             f"{unit.unit_id} assigned to {assignment.mission_type} on {target_summary} "
             f"(ETA {dispatch_steps} step(s))"
         )
+        if lces_warning:
+            summary = f"{summary} | {lces_warning}"
+
         return (
             MISSION_COST[assignment.mission_type]
-            + RESOURCE_DISPATCH_COST[unit.resource_type],
+            + RESOURCE_DISPATCH_COST[unit.resource_type]
+            + lces_penalty,
             summary,
             None,
         )
