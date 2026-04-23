@@ -20,6 +20,49 @@ and protect structures.
 The actual environment package lives in `wildfire_env/`. The detailed package
 README is at `wildfire_env/README.md`.
 
+## Hackathon Theme Fit
+
+**Primary theme: #3.1 World Modeling / Professional Tasks**
+
+This environment is best framed as a professional incident-command simulator:
+
+- the agent operates inside a dynamic partially observable world
+- actions have delayed physical consequences through logistics, travel, and fire spread
+- the agent must maintain consistent internal state across multiple turns
+- success depends on tool-like orchestration of heterogeneous resources, not one-shot text answers
+
+**Secondary theme: #2 Long-Horizon Planning & Instruction Following**
+
+The environment also fits long-horizon planning because the policy has to:
+
+- commit scarce assets early without knowing the full fire picture
+- recover from weak opening moves after delayed ignitions and warmup spread
+- track unit availability, return-to-service timing, and structure priorities over 15-25 steps
+
+We should **not** pitch this as Theme #1 multi-agent or Theme #4 self-improvement in its current form. The current submission is a strong single-agent world-modeling environment with long-horizon planning, not a negotiation or self-play arena.
+
+## Submission Checklist
+
+What is already covered in this repo:
+
+- OpenEnv environment with a valid [openenv.yaml](/C:/Python/Scaler-hackathon/openenv.yaml:1) manifest
+- latest OpenEnv core requirement via `openenv-core[core]>=0.2.3`
+- FastAPI server plus OpenEnv-compatible `reset` / `step` / `state` flow
+- deterministic verifier via `/grader`
+- deterministic heuristic baseline via `/baseline`
+- Unsloth-based GRPO training pipeline in [train_grpo.py](/C:/Python/Scaler-hackathon/train_grpo.py:1)
+- minimal GPU smoke test in [smoke_test.py](/C:/Python/Scaler-hackathon/smoke_test.py:1)
+- Colab-friendly notebook scaffold in [notebooks/wildfire_grpo_minimal_colab.ipynb](/C:/Python/Scaler-hackathon/notebooks/wildfire_grpo_minimal_colab.ipynb)
+
+What still must be added before final submission:
+
+- Hugging Face Space URL for the deployed environment
+- short writeup link: Hugging Face blog, short video, or slide deck
+- actual reward/loss plots from a real training run
+- trained-vs-baseline comparison numbers and/or qualitative examples in this README
+
+Those last items are judging-critical and cannot be satisfied by code changes alone; they need real run artifacts and public links.
+
 ## Why this environment
 
 This is a real-world resource allocation task, not a toy game. The agent must
@@ -216,6 +259,10 @@ Qwen3-1.7B (4-bit QLoRA via Unsloth) + XGrammar-constrained decoding +
 hand-rolled GRPO loop (TRL's GRPOTrainer is single-turn only; multi-turn
 trajectory advantages require a custom loop).
 
+Colab notebook scaffold:
+
+- `notebooks/wildfire_grpo_minimal_colab.ipynb`
+
 Install training extras with:
 
 ```bash
@@ -232,3 +279,4 @@ now fails fast with a clear preflight error instead of a long stack trace.
 - environment manifest: `openenv.yaml`
 - detailed environment docs: `wildfire_env/README.md`
 - training pipeline: `train_grpo.py` (on `grpo-wildfire-training` branch)
+- Colab notebook scaffold: `notebooks/wildfire_grpo_minimal_colab.ipynb`

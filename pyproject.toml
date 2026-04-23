@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Wildfire incident-command environment for OpenEnv"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv-core[core]>=0.2.3",
     "numpy>=1.24.0",
     "openai>=1.0.0",
 ]
