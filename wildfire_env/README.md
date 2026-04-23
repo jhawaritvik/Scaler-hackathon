@@ -17,6 +17,11 @@ An [OpenEnv](https://github.com/meta-pytorch/openenv)-compatible environment tha
 
 Fire spread is driven by coupled terrain, fuel, moisture, weather, and fire-intensity physics grounded in published wildfire science (Rothermel 1972, Alexandridis et al. 2008, NWCG operational data). Tactics modelled include direct attack, wet lines, retardant drops, dozer firebreaks, and intentional backfires with anchor-point validation.
 
+Live deployment:
+
+- Space: [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
+- App: [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
+
 ---
 
 ## Quick Start

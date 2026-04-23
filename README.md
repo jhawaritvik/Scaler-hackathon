@@ -47,6 +47,7 @@ What is already covered in this repo:
 
 - OpenEnv environment with a valid [openenv.yaml](/C:/Python/Scaler-hackathon/openenv.yaml:1) manifest
 - latest OpenEnv core requirement via `openenv-core[core]>=0.2.3`
+- deployed Hugging Face Space: [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
 - FastAPI server plus OpenEnv-compatible `reset` / `step` / `state` flow
 - deterministic verifier via `/grader`
 - deterministic heuristic baseline via `/baseline`
@@ -56,12 +57,19 @@ What is already covered in this repo:
 
 What still must be added before final submission:
 
-- Hugging Face Space URL for the deployed environment
 - short writeup link: Hugging Face blog, short video, or slide deck
 - actual reward/loss plots from a real training run
 - trained-vs-baseline comparison numbers and/or qualitative examples in this README
 
 Those last items are judging-critical and cannot be satisfied by code changes alone; they need real run artifacts and public links.
+
+## Submission Links
+
+- Live Space: [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
+- Live app: [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
+- Short writeup / video / slides: add before submission
+- Reward and loss plots: add before submission
+- Trained-vs-baseline results summary: add before submission
 
 ## Why this environment
 
@@ -278,5 +286,5 @@ now fails fast with a clear preflight error instead of a long stack trace.
 - root Dockerfile: `Dockerfile`
 - environment manifest: `openenv.yaml`
 - detailed environment docs: `wildfire_env/README.md`
-- training pipeline: `train_grpo.py` (on `grpo-wildfire-training` branch)
+- training pipeline: `train_grpo.py`
 - Colab notebook scaffold: `notebooks/wildfire_grpo_minimal_colab.ipynb`
