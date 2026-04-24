@@ -11,7 +11,7 @@ Required environment variable:
 
 Optional environment variables:
     API_BASE_URL     (default: https://router.huggingface.co/v1/)
-    MODEL_NAME       (default: meta-llama/Llama-3.1-8B-Instruct)
+    MODEL_NAME       (default: Qwen/Qwen3-4B-Instruct-2507)
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import sys
 # ---------------------------------------------------------------------------
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
-MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-4B-Instruct-2507")
 HF_TOKEN = os.getenv("HF_TOKEN")
 SCORE_EPS = 0.01
 
@@ -61,6 +61,7 @@ Each step you receive a JSON observation and must respond with a JSON action.
 
 ACTION FORMAT (respond with valid JSON only, no markdown):
 {
+  "plan": "Scout the windward edge and shield the priority-3 structure.",
   "assignments": [
     {
       "unit_id": "crew_1",
@@ -97,6 +98,8 @@ STRATEGY:
 - Backfire requires a firebreak, water, burned, or bare-ground anchor cell.
 - If no fire is present, stage resources near likely ignition zones.
 - You may issue multiple assignments per step.
+- Use the optional `plan` field for one short tactical sentence only.
+- Keep `plan` under 160 characters and put the real decision in `assignments`.
 
 Return ONLY valid JSON. No explanation, no code blocks."""
 

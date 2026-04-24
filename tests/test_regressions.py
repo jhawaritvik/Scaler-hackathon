@@ -5,6 +5,13 @@ from pathlib import Path
 import pytest
 
 import smoke_test
+from plot_training_curves import (
+    MetricSpec,
+    build_summary_markdown,
+    load_training_log,
+    render_svg_dashboard,
+)
+from submission_check import collect_checks
 from wildfire_env.models import GridPoint, ResourceAssignment, TargetSpec, WildfireAction
 from wildfire_env.server.app import GraderRequest, _grade_episode, _heuristic_action
 from wildfire_env.server.terrain import (
@@ -40,6 +47,7 @@ def test_busy_unit_visibility_handles_dispatched_units() -> None:
         obs = env.reset(task_id="easy")
         unit = next(fleet_unit for fleet_unit in obs.fleet_units if fleet_unit.resource_type == "crews")
         action = WildfireAction(
+            plan="Stage the nearest crew toward the center for future attack.",
             assignments=[
                 ResourceAssignment(
                     unit_id=unit.unit_id,
@@ -61,6 +69,14 @@ def test_busy_unit_visibility_handles_dispatched_units() -> None:
         )
     finally:
         env.close()
+
+
+def test_action_plan_field_is_optional_and_length_limited() -> None:
+    action = WildfireAction(plan="Protect the highest-priority structure first.")
+
+    assert action.plan.startswith("Protect")
+    with pytest.raises(Exception):
+        WildfireAction(plan="x" * 161)
 
 
 def test_heuristic_uses_later_available_units_after_busy_units() -> None:
@@ -139,3 +155,28 @@ def test_smoke_test_reports_failures_with_cp1252_safe_output(monkeypatch, capsys
     stdout = capsys.readouterr().out
     assert "SMOKE TEST FAILED: boom" in stdout
     stdout.encode("cp1252")
+
+
+def test_plot_training_curves_generates_svg_and_summary() -> None:
+    records = load_training_log(Path("tests/fixtures/sample_train_log.jsonl"))
+    svg_text = render_svg_dashboard(
+        "Wildfire GRPO Reward Curves",
+        records,
+        [MetricSpec("mean_return", "Mean Trajectory Return", "#2563eb")],
+    )
+    summary_text = build_summary_markdown(records)
+
+    assert "<svg" in svg_text
+    assert "Mean Trajectory Return" in svg_text
+    assert "Training Summary" in summary_text
+    assert "| easy | 0 | 0.200 | 1.000 | 90.0% |" in summary_text
+
+
+def test_submission_check_reports_missing_story_link() -> None:
+    fixture_root = Path("tests/fixtures/submission_repo")
+    checks = collect_checks(fixture_root, fixture_root / "submission_artifacts")
+    by_label = {check.label: check for check in checks}
+
+    assert by_label["README has public Space link"].ok is True
+    assert by_label["README links a writeup/video/slides"].ok is False
+    assert by_label["README includes training plots/results"].ok is False

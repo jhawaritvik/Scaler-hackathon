@@ -161,6 +161,14 @@ class FleetUnitObservation(BaseModel):
 class WildfireAction(Action):
     """Structured action for the wildfire environment."""
 
+    plan: str = Field(
+        default="",
+        max_length=160,
+        description=(
+            "Optional one-sentence tactical note for this step. "
+            "Keep it short; the environment ignores it."
+        ),
+    )
     assignments: list[ResourceAssignment] = Field(
         default_factory=list,
         description="Assignments to issue during this decision interval",

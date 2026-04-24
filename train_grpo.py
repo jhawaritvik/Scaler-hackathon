@@ -3,8 +3,8 @@
 Multi-turn GRPO training pipeline for the wildfire incident-command environment.
 
 Target hardware:
-  - T4 (16 GB, Colab free tier): use Qwen/Qwen3-1.7B  ← default model_name
-  - On-site / A100 (40+ GB):     use Qwen/Qwen3-4B (change model_name in Config)
+  - T4 (16 GB, Colab free tier): use Qwen/Qwen3-1.7B as a fallback
+  - On-site / A100 (40+ GB):     use Qwen/Qwen3-4B-Instruct-2507  ← default model_name
 
 Expected peak VRAM for Qwen3-1.7B on T4:
   - Base model (4-bit NF4 QLoRA):              ~1.1 GB
@@ -74,8 +74,8 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 
 @dataclass
 class Config:
-    model_name: str = "Qwen/Qwen3-1.7B"
-    task_curriculum: tuple = (("easy", 0, 10), ("medium", 10, 35), ("hard", 35, 60))
+    model_name: str = "Qwen/Qwen3-4B-Instruct-2507"
+    task_curriculum: tuple = (("easy", 0, 10), ("medium", 10, 25), ("hard", 25, 60))
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [42, 100, 200, 300],
         "medium": [67, 101, 201, 131],   # replaced 301 (dead-zone); 131 heuristic ≈ 0.38, aligned with pool
@@ -118,6 +118,7 @@ Each step you receive a JSON observation and must respond with a JSON action.
 
 ACTION FORMAT (respond with valid JSON only, no markdown):
 {
+  "plan": "Scout the windward edge and shield the priority-3 structure.",
   "assignments": [
     {
       "unit_id": "crew_1",
@@ -154,6 +155,8 @@ STRATEGY:
 - Backfire requires a firebreak, water, burned, or bare-ground anchor cell.
 - If no fire is present, stage resources near likely ignition zones.
 - You may issue multiple assignments per step.
+- Use the optional `plan` field for one short tactical sentence only.
+- Keep `plan` under 160 characters and put the real decision in `assignments`.
 
 OBSERVATION SIGNALS:
 - forecast: next 1-2 steps of wind/temp/humidity — position units upwind of projected spread.
@@ -243,6 +246,7 @@ class StepData:
     old_logprobs: list[float]  # unconstrained logprobs, shape (comp_len,)
     step_reward: float
     parse_success: bool
+    plan_chars: int
 
 
 @dataclass
@@ -255,6 +259,8 @@ class Trajectory:
     grader_score: float
     episode_steps: int
     action_parse_successes: int
+    total_plan_chars: int
+    nonempty_plan_steps: int
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +329,8 @@ def rollout_episode(
 
     steps: list[StepData] = []
     parse_successes = 0
+    total_plan_chars = 0
+    nonempty_plan_steps = 0
 
     model.eval()
     while not obs.done and len(steps) < config.max_episode_steps:
@@ -365,6 +373,9 @@ def rollout_episode(
             action = WildfireAction()   # no-op fallback
             parse_ok = False
         parse_successes += int(parse_ok)
+        plan_chars = len((action.plan or "").strip()) if parse_ok else 0
+        total_plan_chars += plan_chars
+        nonempty_plan_steps += int(plan_chars > 0)
 
         # Step the environment
         obs = env.step(action)
@@ -382,6 +393,7 @@ def rollout_episode(
                 old_logprobs=old_lps,
                 step_reward=obs.reward,
                 parse_success=parse_ok,
+                plan_chars=plan_chars,
             ))
 
     env.close()
@@ -408,6 +420,8 @@ def rollout_episode(
         grader_score=grader_score,
         episode_steps=len(steps),
         action_parse_successes=parse_successes,
+        total_plan_chars=total_plan_chars,
+        nonempty_plan_steps=nonempty_plan_steps,
     )
 
 
@@ -881,6 +895,9 @@ def train(config: Config):
         parse_ok    = sum(t.action_parse_successes for t in all_trajectories)
         parse_total = sum(t.episode_steps          for t in all_trajectories)
         ret_std     = float(returns.std())
+        total_plan_chars = sum(t.total_plan_chars for t in all_trajectories)
+        total_plan_steps = sum(t.nonempty_plan_steps for t in all_trajectories)
+        total_episode_steps = max(1, parse_total)
 
         # ── Update phase ────────────────────────────────────────────────────
         torch.cuda.empty_cache()
@@ -905,6 +922,8 @@ def train(config: Config):
             "per_seed_grader":           {s: g for s, g, _ in per_seed_meta},
             "action_parse_success_rate": parse_ok / max(1, parse_total),
             "mean_episode_steps":        float(ep_steps.mean()),
+            "mean_plan_chars_per_step":  total_plan_chars / total_episode_steps,
+            "plan_usage_rate":           total_plan_steps / total_episode_steps,
             "policy_loss":               upd["policy_loss"],
             "kl_divergence":             upd["kl_divergence"],
             "clip_fraction":             upd["clip_fraction"],
@@ -918,6 +937,7 @@ def train(config: Config):
             f"grader={metrics['mean_grader_score']:.3f} ({per_seed_str})  "
             f"ret={metrics['mean_return']:+.2f}±{ret_std:.2f}  "
             f"parse={metrics['action_parse_success_rate']:.1%}  "
+            f"plan={metrics['mean_plan_chars_per_step']:.1f}ch/{metrics['plan_usage_rate']:.1%}  "
             f"kl={metrics['kl_divergence']:.4f}  "
             f"clip={metrics['clip_fraction']:.2%}"
         )

@@ -1,11 +1,15 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+pytest-cache-files-*/
+tmp*/
 .venv/
 venv/
 *.egg-info/
 baseline_scores.json
-reward_audit_report.json
+_token_budget_check.py
+smoke_test_output/
+grpo_wildfire/
 
 wildfire_env/.venv/
 wildfire_env/.pytest_cache/

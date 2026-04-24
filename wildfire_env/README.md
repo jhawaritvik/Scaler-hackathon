@@ -22,6 +22,9 @@ Live deployment:
 - Space: [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
 - App: [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
 
+For the canonical hackathon submission story, training workflow, and reward
+audit summary, see the repository root [README](../README.md).
+
 ---
 
 ## Quick Start
@@ -86,6 +89,7 @@ openenv validate .
 
 ```python
 class WildfireAction(Action):
+    plan: str = ""                        # optional short tactical note, ignored by env
     assignments: list[ResourceAssignment]   # can be empty (no-op)
 
 class ResourceAssignment(BaseModel):
@@ -118,6 +122,11 @@ class ResourceAssignment(BaseModel):
 | `area` | `{"center": {"row":R,"col":C}, "radius": N}` | Circular area |
 | `polygon` | `{"vertices": [...]}` | Arbitrary polygon (≤ 8 vertices) |
 | `structure` | `{"structure_id": "structure_1"}` | Named structure |
+
+`plan` is an optional one-sentence scratchpad field capped at 160 characters.
+It is preserved in the JSON schema so grammar-constrained models can emit a
+short tactical rationale without breaking parse rate, but the simulator itself
+ignores it and only executes `assignments`.
 
 ---
 
@@ -241,21 +250,24 @@ curl -X POST http://localhost:8000/grader \
 
 ## Reward Function
 
-Dense per-step reward composed of:
+Dense per-step reward is composed of the following current signals:
 
 | Signal | Value | Trigger |
 |--------|-------|---------|
-| Structure burning | −0.12 × priority | Each step a structure is on fire (urgency signal) |
-| Structure lost | −0.50 × priority | **Once** when a structure cell transitions to burned |
-| Structure safe | +0.003 × priority | Each step an intact structure stays under nearby threat without being lost |
-| Cells suppressed | +0.04 per cell | Each BURNING cell extinguished by resource action |
-| Cells protected | +0.0025 per cell | Each newly protected threatened unburned cell, capped at 12 cells per step |
-| Fire extinguished | +0.30 to +0.70 | **Once** when all burning cells reach zero, scaled by containment speed |
-| Active fire pressure | −0.008 × min(burning_cells, 10) | Each step while fire remains active |
-| Mission dispatch cost | −0.001 to −0.015 | Per dispatch, based on mission type |
-| Resource dispatch surcharge | −0.0005 to −0.0040 | Additional per dispatch, based on resource type |
-| Invalid action | −0.05 | Rejected assignment |
-| Low-impact action | −0.02 | Wasteful mission |
+| Structure burning | `-0.12 × priority × gn` | Each step a structure is burning (`gn = min(1, (15/size)^1.5)`) |
+| Structure lost | `-0.50 × priority × gn` | **Once** when a structure cell transitions to burned |
+| Structure safe | `+0.003 × priority` | Each step an intact structure remains under nearby threat |
+| Cells suppressed | `+0.06` per cell | Each burning cell extinguished by active suppression that step |
+| Cells protected | `+0.0025` per cell | Each newly protected threatened unburned cell, capped at 12 cells per step |
+| Containment | `+0.018 × net cells` | Net burning-cell reduction, gated on active suppression |
+| Fire extinguished | `+0.30` to `+0.70` | **Once** when all burning cells reach zero, scaled by containment speed |
+| Active fire pressure | `-0.005 × min(burning_cells, 8)` | Each step while fire remains active |
+| Mission dispatch cost | `-0.0008` to `-0.0112` | Per dispatch, based on mission type |
+| Resource dispatch surcharge | `-0.0004` to `-0.0030` | Additional per dispatch, based on resource type |
+| Idle penalty | `-0.005 × min(available_units, 4)` | Empty action while fire is active and units are available |
+| LCES violation | `-0.03` | Unsafe ground assignment without a reachable safety zone |
+| Invalid action | `-0.05` | Rejected assignment |
+| Low-impact action | `-0.02` | Wasteful mission |
 
 Weather conditions (temperature, humidity, wind) are observable but do not directly generate reward signals. The agent should learn that adverse weather increases fire spread risk and adjust tactics accordingly.
 

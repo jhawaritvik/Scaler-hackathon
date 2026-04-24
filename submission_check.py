@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Check whether the repo has the artifacts needed for hackathon submission.
+
+The checker is intentionally lightweight: it verifies the presence of the
+environment, training, evaluation, audit, and presentation assets that judges
+will look for. Use ``--strict`` before the final push so missing items cause a
+non-zero exit code.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    label: str
+    ok: bool
+    detail: str
+
+
+SPACE_PATTERN = re.compile(r"https://huggingface\.co/spaces/[^\s)]+")
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
+    readme = _read_text(repo_root / "README.md")
+
+    required_files = [
+        ("OpenEnv manifest", repo_root / "openenv.yaml"),
+        ("Training script", repo_root / "train_grpo.py"),
+        ("Evaluation script", repo_root / "eval_policy.py"),
+        ("Reward audit", repo_root / "reward_audit.py"),
+        ("Regression tests", repo_root / "tests" / "test_regressions.py"),
+        ("Colab notebook", repo_root / "notebooks" / "wildfire_grpo_minimal_colab.ipynb"),
+    ]
+
+    checks = [
+        CheckResult(label, path.exists(), str(path.relative_to(repo_root)) if path.exists() else f"missing: {path.name}")
+        for label, path in required_files
+    ]
+
+    checks.append(
+        CheckResult(
+            "README has public Space link",
+            bool(SPACE_PATTERN.search(readme)),
+            "found" if SPACE_PATTERN.search(readme) else "add the HF Space URL to README.md",
+        )
+    )
+    checks.append(
+        CheckResult(
+            "README links a writeup/video/slides",
+            "to be linked after training completes" not in readme.lower(),
+            "found" if "to be linked after training completes" not in readme.lower() else "replace the placeholder with a public URL",
+        )
+    )
+    checks.append(
+        CheckResult(
+            "README includes training plots/results",
+            "to be added after training completes" not in readme.lower(),
+            "found" if "to be added after training completes" not in readme.lower() else "replace the placeholder with generated plots/results",
+        )
+    )
+
+    artifact_files = [
+        ("Reward audit JSON", repo_root / "reward_audit.json"),
+        ("Training reward curve", artifacts_dir / "training_reward_curve.svg"),
+        ("Training loss curve", artifacts_dir / "training_loss_curve.svg"),
+        ("Training summary", artifacts_dir / "training_summary.md"),
+        ("Untrained eval JSON", artifacts_dir / "eval_untrained.json"),
+        ("Trained eval JSON", artifacts_dir / "eval_trained.json"),
+    ]
+    checks.extend(
+        CheckResult(label, path.exists(), str(path.relative_to(repo_root)) if path.exists() else f"missing: {path}")
+        for label, path in artifact_files
+    )
+
+    return checks
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Verify hackathon submission readiness.")
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path("."),
+        help="Repository root to inspect.",
+    )
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        default=Path("submission_artifacts"),
+        help="Directory that should contain generated training/eval artifacts.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit with code 1 if any check fails.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    repo_root = args.repo_root.resolve()
+    artifacts_dir = (repo_root / args.artifacts_dir).resolve()
+    checks = collect_checks(repo_root, artifacts_dir)
+
+    print("Hackathon submission readiness")
+    print("=" * 32)
+    failures = 0
+    for check in checks:
+        status = "OK" if check.ok else "MISSING"
+        print(f"[{status:<7}] {check.label}: {check.detail}")
+        failures += int(not check.ok)
+
+    if failures:
+        print(f"\n{failures} check(s) still need attention.")
+    else:
+        print("\nAll tracked submission checks passed.")
+
+    if args.strict and failures:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -2,7 +2,7 @@
 """
 Smoke test: one GRPO iteration with tiny config (~5 minutes on T4).
 
-Run this FIRST before committing to a full 30-iteration training run.
+Run this FIRST before committing to a full curriculum training run.
 A clean exit (no crash, no NaN/inf in loss) means the pipeline is functional.
 
 Usage:
