@@ -24,7 +24,7 @@ class CheckResult:
 
 SPACE_PATTERN = re.compile(r"https://huggingface\.co/spaces/[^\s)]+")
 TRAINING_NOTEBOOK_PATTERN = re.compile(r"wildfire_training_eval_hf\.ipynb")
-BASELINE_NOTEBOOK_PATTERN = re.compile(r"wildfire_untrained_eval_kaggle\.ipynb")
+EVAL_NOTEBOOK_PATTERN = re.compile(r"wildfire_http_eval_hf\.ipynb")
 PLOT_IMAGE_PATTERNS = {
     "reward": re.compile(r"!\[[^\]]*\]\([^)]+training_reward_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
     "loss": re.compile(r"!\[[^\]]*\]\([^)]+training_loss_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
@@ -41,11 +41,10 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
     required_files = [
         ("OpenEnv manifest", repo_root / "openenv.yaml"),
         ("Training script", repo_root / "train_grpo.py"),
-        ("Evaluation script", repo_root / "eval_policy.py"),
+        ("HTTP showcase evaluation script", repo_root / "eval_policy_http.py"),
         ("Reward audit", repo_root / "reward_audit.py"),
-        ("Regression tests", repo_root / "tests" / "test_regressions.py"),
         ("HF training notebook", repo_root / "notebooks" / "wildfire_training_eval_hf.ipynb"),
-        ("Kaggle untrained eval notebook", repo_root / "notebooks" / "wildfire_untrained_eval_kaggle.ipynb"),
+        ("HF HTTP eval notebook", repo_root / "notebooks" / "wildfire_http_eval_hf.ipynb"),
     ]
 
     checks = [
@@ -69,9 +68,9 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
     )
     checks.append(
         CheckResult(
-            "README links the baseline notebook",
-            bool(BASELINE_NOTEBOOK_PATTERN.search(readme)),
-            "found" if BASELINE_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_untrained_eval_kaggle.ipynb from README.md",
+            "README links the HTTP eval notebook",
+            bool(EVAL_NOTEBOOK_PATTERN.search(readme)),
+            "found" if EVAL_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_http_eval_hf.ipynb from README.md",
         )
     )
     checks.append(

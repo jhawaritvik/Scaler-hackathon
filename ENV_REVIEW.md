@@ -9,8 +9,8 @@ behaves on the current task set.
 - The environment exposes three seeded tasks: `easy`, `medium`, and `hard`.
 - `train_grpo.py` is the main GRPO fine-tuning entrypoint for
   `Qwen/Qwen3-4B-Instruct-2507`.
-- `eval_policy.py` runs the held-out seed bank for reproducible trained vs.
-  untrained comparisons.
+- `eval_policy_http.py` runs the held-out seed bank through the live OpenEnv
+  HTTP endpoints for reproducible trained vs. untrained comparisons.
 - `capture_replay.py` and `/viewer` provide the visual demo path for recorded
   or live episodes.
 
@@ -28,17 +28,16 @@ Each training run now writes these files into its output directory:
 - `best_adapter_easy/`, `best_adapter_medium/`, `best_adapter_hard/`
 - `final_adapter/`
 
-This layout is meant to be friendly to Kaggle notebooks and Hugging Face jobs,
+This layout is meant to be friendly to Hugging Face GPU jobs,
 where a run may need to be resumed or inspected after an interrupted session.
 
 ## Post-run recording
 
-Use `record_qwen_run.py` after training to export:
+After training, use `plot_training_curves.py` and `eval_policy_http.py` to export:
 
 - training reward and optimization plots
 - `eval_untrained.json`
 - `eval_trained.json`
-- `run_record.json`
 
 The output lands in `submission_artifacts/` by default and is the cleanest way
 to produce a submission-ready performance bundle for the current HEAD.

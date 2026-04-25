@@ -1,3 +1,0 @@
-- **Live Space:** https://huggingface.co/spaces/demo/wildfire
-- **Writeup / demo video / slides:** _to be linked after training completes_
-- **Training reward & loss plots:** _to be added after training completes_

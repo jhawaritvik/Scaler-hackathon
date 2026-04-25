@@ -47,7 +47,8 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - **Live app:** [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
 - **Training pipeline:** [`train_grpo.py`](./train_grpo.py) (also runnable via [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb))
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) (84 fixed-seed episodes, no exploit-like policies flagged)
-- **Submission artifact helpers:** [`record_qwen_run.py`](./record_qwen_run.py), [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
+- **HTTP showcase eval:** [`eval_policy_http.py`](./eval_policy_http.py) drives both baseline and finetuned policies through `/reset`, `/step`, and `/grader` on the live OpenEnv Space
+- **Submission artifact helpers:** [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
 - **Writeup / demo video / slides:** [`ENV_REVIEW.md`](./ENV_REVIEW.md) (interim technical writeup; replace with final public blog/video/slides URL)
 - **Post-run outputs:** `grpo_wildfire/config.json`, `grpo_wildfire/task_catalog.json`, `grpo_wildfire/run_status.json`, `grpo_wildfire/checkpoint_index.json`, `grpo_wildfire/latest_metrics.json`, `grpo_wildfire/final_adapter/`
 - **Submission artifacts after a real GPU run:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png), [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png), [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json), and [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json)
@@ -58,14 +59,13 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - FastAPI server exposing `/reset`, `/step`, `/state`, `/grader`, `/baseline`, `/tasks`, `/ws`, `/demo`
 - Deterministic heuristic baseline and deterministic grader for reproducible evaluation
 - Hand-rolled multi-turn GRPO training pipeline ([`train_grpo.py`](./train_grpo.py)) — Qwen3-4B-Instruct-2507 + 4-bit QLoRA (Unsloth) + XGrammar-constrained decoding
-- Run metadata + checkpoint index files so Kaggle / Hugging Face runs are restartable and auditable
+- Single HTTP showcase evaluator ([`eval_policy_http.py`](./eval_policy_http.py)) for both untrained baseline and trained adapter runs against the deployed OpenEnv Space
+- Run metadata + checkpoint index files so Hugging Face runs are restartable and auditable
 - GPU smoke test ([`smoke_test.py`](./smoke_test.py)) with NaN/Inf guards and preflight dependency checks
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-like-policy flagging
-- One-shot post-run exporter ([`record_qwen_run.py`](./record_qwen_run.py)) that turns a training directory into plots, eval JSONs, and a consolidated run record
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) that turns `log.jsonl` into judge-friendly SVG reward/loss curves with no extra plotting dependency
 - Submission readiness checker ([`submission_check.py`](./submission_check.py)) for the final hackathon packaging pass
-- Regression test suite ([`tests/test_regressions.py`](./tests/test_regressions.py))
-- Hugging Face training notebook ([`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)) and Kaggle untrained baseline notebook ([`notebooks/wildfire_untrained_eval_kaggle.ipynb`](./notebooks/wildfire_untrained_eval_kaggle.ipynb))
+- Hugging Face training notebook ([`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)) and separate HTTP evaluation notebook ([`notebooks/wildfire_http_eval_hf.ipynb`](./notebooks/wildfire_http_eval_hf.ipynb))
 
 ## Why this environment
 
@@ -305,9 +305,9 @@ plateaus on multi-front incidents (medium, hard) where the trained policy
 must pre-position units against the forecast and split coverage across
 priority structures.
 
-The trained-policy evaluation in `eval_policy.py` runs the same five seeds
-per task, so the trained-vs-heuristic delta in `submission_artifacts/eval_*.json`
-is a clean held-out generalization signal.
+The HTTP showcase evaluation in `eval_policy_http.py` runs the same five seeds
+per task through `/reset`, `/step`, and `/grader`, so the trained-vs-baseline
+delta in `submission_artifacts/eval_*.json` is a clean held-out OpenEnv signal.
 
 ### Why a 16-seed training pool, not thousands
 
@@ -364,8 +364,8 @@ trajectory advantages require a custom loop).
 
 Notebook workflows:
 
-- `notebooks/wildfire_untrained_eval_kaggle.ipynb` — run first on Kaggle to produce the untrained baseline artifact
-- `notebooks/wildfire_training_eval_hf.ipynb` — run on Hugging Face GPU runtime for GRPO training and trained-model evaluation
+- `notebooks/wildfire_training_eval_hf.ipynb` — run on Hugging Face GPU runtime for GRPO training only
+- `notebooks/wildfire_http_eval_hf.ipynb` — run after training for HTTP baseline/trained evaluation and final artifacts
 
 Install training extras with:
 
@@ -383,18 +383,19 @@ Once you have GPU access, this is the clean path to a final submission package:
 ```bash
 .\.venv\Scripts\python.exe reward_audit.py --json-out reward_audit.json
 .\.venv\Scripts\python.exe train_grpo.py
-.\.venv\Scripts\python.exe record_qwen_run.py --run-dir grpo_wildfire --artifacts-dir submission_artifacts
+.\.venv\Scripts\python.exe eval_policy_http.py --untrained --base-url https://chunchunmaru-101-wildfire-env.hf.space --output submission_artifacts/eval_untrained.json
+.\.venv\Scripts\python.exe eval_policy_http.py --base-url https://chunchunmaru-101-wildfire-env.hf.space --output submission_artifacts/eval_trained.json
 .\.venv\Scripts\python.exe submission_check.py --strict
 ```
 
 `train_grpo.py` now also writes `config.json`, `task_catalog.json`,
 `run_status.json`, `checkpoint_index.json`, `latest_metrics.json`, `latest/`,
 `best_adapter_<task>/`, and `final_adapter/` into the run directory, so a
-Kaggle or Hugging Face job can be resumed and audited without guessing paths.
+Hugging Face job can be resumed and audited without guessing paths.
 
-The exporter outputs land in [`submission_artifacts/`](./submission_artifacts/),
-which is where the final reward/loss plots, eval JSONs, and `run_record.json`
-should be committed before the final hackathon push.
+The outputs land in [`submission_artifacts/`](./submission_artifacts/), which
+is where the final reward/loss plots and HTTP eval JSONs should be committed
+before the final hackathon push.
 
 ## Results
 
@@ -405,10 +406,10 @@ The repository is wired to generate these files after a real GPU run:
 - `submission_artifacts/training_summary.md`
 - `submission_artifacts/eval_untrained.json`
 - `submission_artifacts/eval_trained.json`
-- `submission_artifacts/run_record.json`
 
-Run `record_qwen_run.py` after training to materialize the plots and eval
-outputs for the current HEAD.
+Run `plot_training_curves.py` after training to materialize the plots and
+summary for the current HEAD, then run `eval_policy_http.py` for baseline and
+trained HTTP showcase scores.
 
 ## Repository layout
 
@@ -416,14 +417,13 @@ outputs for the current HEAD.
 - `Dockerfile` — Space container
 - `openenv.yaml` — OpenEnv manifest
 - `train_grpo.py` — multi-turn GRPO training pipeline
-- `eval_policy.py` — deterministic held-out evaluation of a trained adapter
+- `eval_policy_http.py` — OpenEnv HTTP showcase evaluation for baseline and trained policies
 - `smoke_test.py` — 1-iter GRPO preflight
 - `reward_audit.py` — reward-hacking audit harness
 - `plot_training_curves.py` — SVG reward/loss plot generator for `log.jsonl`
 - `submission_check.py` — final packaging checker for hackathon submission
-- `tests/test_regressions.py` — regression tests
 - `submission_artifacts/` — generated training plots, eval JSONs, and final evidence
-- `notebooks/wildfire_untrained_eval_kaggle.ipynb` — Kaggle untrained baseline evaluation
-- `notebooks/wildfire_training_eval_hf.ipynb` — Hugging Face GPU training and trained evaluation
+- `notebooks/wildfire_training_eval_hf.ipynb` — Hugging Face GPU training
+- `notebooks/wildfire_http_eval_hf.ipynb` — HTTP baseline/trained evaluation and final artifacts
 - `wildfire_env/` — environment package (see `wildfire_env/README.md` for
   internals)

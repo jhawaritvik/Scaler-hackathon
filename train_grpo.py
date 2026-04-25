@@ -79,7 +79,7 @@ class Config:
     # 16 hand-curated seeds per task, drawn from a 0-79 sweep and filtered
     # to heuristic grader 0.2-0.85 (signal-rich; excludes dead-zone and
     # trivial scenarios). Spread evenly across that range for diversity.
-    # Eval seeds (eval_policy.py:EVAL_TASKS) are fully held-out — no overlap.
+    # Eval seeds (eval_policy_http.py:EVAL_TASKS) are fully held-out — no overlap.
     seeds_per_task: dict = field(default_factory=lambda: {
         "easy":   [7, 8, 12, 22, 24, 27, 37, 43, 50, 54, 59, 63, 70, 71, 75, 80],
         "medium": [2, 3, 4, 5, 10, 14, 20, 21, 27, 31, 36, 38, 41, 49, 60, 79],
