@@ -14,7 +14,7 @@ from plot_training_curves import (
 )
 from submission_check import collect_checks
 from wildfire_env.models import GridPoint, ResourceAssignment, TargetSpec, WildfireAction
-from wildfire_env.server.app import GraderRequest, _grade_episode, _heuristic_action
+from wildfire_env.server.app import GRADER_WEIGHTS, GraderRequest, _grade_episode, _heuristic_action
 from wildfire_env.server.terrain import (
     _airbase_candidates,
     _ground_outpost_candidates,
@@ -35,11 +35,74 @@ def test_grader_uses_seeded_structure_inventory() -> None:
         )
     )
 
-    assert response.score == 0.3
+    assert response.score == 0.45
     assert response.components["saved_priority"] == 0
     assert response.components["total_priority"] == 8
     assert response.components["reported_structures"] == 1
     assert response.components["expected_structures"] == 5
+    assert response.components["weights"] == GRADER_WEIGHTS
+
+
+def test_grader_rewards_containment_and_spread_control() -> None:
+    structures = [
+        {"structure_id": f"structure_{idx}", "priority": 1, "status": "structure"}
+        for idx in range(1, 5)
+    ]
+    contained = _grade_episode(
+        GraderRequest(
+            task_id="easy",
+            seed=7,
+            step=8,
+            max_steps=20,
+            structures=structures,
+            burned_cells=4,
+            burning_cells=0,
+        )
+    )
+    still_spreading = _grade_episode(
+        GraderRequest(
+            task_id="easy",
+            seed=7,
+            step=8,
+            max_steps=20,
+            structures=structures,
+            burned_cells=4,
+            burning_cells=8,
+        )
+    )
+    high_spread = _grade_episode(
+        GraderRequest(
+            task_id="easy",
+            seed=7,
+            step=8,
+            max_steps=20,
+            structures=structures,
+            burned_cells=25,
+            burning_cells=8,
+        )
+    )
+
+    assert 0.0 < high_spread.score < still_spreading.score < contained.score < 1.0
+    assert contained.components["containment_component"] > still_spreading.components["containment_component"]
+    assert still_spreading.components["spread_limit_component"] > high_spread.components["spread_limit_component"]
+
+
+def test_grader_exposes_curriculum_scaled_spread_budgets() -> None:
+    common = {
+        "seed": 7,
+        "step": 10,
+        "max_steps": 20,
+        "structures": [],
+        "burned_cells": 10,
+        "burning_cells": 1,
+    }
+
+    easy = _grade_episode(GraderRequest(task_id="easy", **common))
+    medium = _grade_episode(GraderRequest(task_id="medium", **common))
+    hard = _grade_episode(GraderRequest(task_id="hard", **common))
+
+    assert easy.components["spread_budget_cells"] < medium.components["spread_budget_cells"]
+    assert medium.components["spread_budget_cells"] < hard.components["spread_budget_cells"]
 
 
 def test_busy_unit_visibility_handles_dispatched_units() -> None:

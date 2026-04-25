@@ -162,6 +162,19 @@ class GraderResponse(BaseModel):
 
 
 _SCORE_EPS = 0.01
+GRADER_WEIGHTS = {
+    "structure": 0.45,
+    "area": 0.20,
+    "containment": 0.15,
+    "spread_limit": 0.10,
+    "efficiency": 0.10,
+}
+SPREAD_BUDGET_RATIOS = {
+    "easy": 0.08,
+    "medium": 0.14,
+    "hard": 0.22,
+}
+ACTIVE_FIRE_BUDGET_RATIO = 0.08
 
 
 def _strict_open_unit_interval(value: float) -> float:
@@ -173,10 +186,14 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
     """Compute a normalised 0.0–1.0 grader score from episode outcome data.
 
     Scoring weights:
-      - Structure protection (60%): weighted sum of saved structure priorities
+      - Structure protection (45%): weighted sum of saved structure priorities
         divided by total structure priority in the task.
-      - Area preservation (30%): fraction of burnable terrain cells that
+      - Area preservation (20%): fraction of burnable terrain cells that
         were NOT burned or burning at episode end.
+      - Active containment (15%): rewards ending the episode with little or
+        no active fire remaining.
+      - Spread limit (10%): rewards keeping damaged area below a
+        difficulty-scaled incident budget.
       - Efficiency bonus (10%): awarded only when fire is fully contained;
         a faster containment gives a higher bonus.
     """
@@ -187,8 +204,10 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
             components={
                 "structure_component": _SCORE_EPS,
                 "area_component": _SCORE_EPS,
+                "containment_component": _SCORE_EPS,
+                "spread_limit_component": _SCORE_EPS,
                 "efficiency_component": _SCORE_EPS,
-                "weights": {"structure": 0.60, "area": 0.30, "efficiency": 0.10},
+                "weights": GRADER_WEIGHTS,
                 "saved_priority": 0,
                 "total_priority": 1,
                 "cells_damaged": 0,
@@ -255,14 +274,32 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
     else:
         efficiency_score = 0.0
 
+    # ── Active containment score (15%) ──
+    # This is separate from area preservation: a policy can save structures
+    # and limit burned acreage while still leaving an expanding active front.
+    active_fire_budget = max(1, int(total_burnable * ACTIVE_FIRE_BUDGET_RATIO))
+    containment_score = max(0.0, 1.0 - req.burning_cells / active_fire_budget)
+
+    # ── Spread-limit score (10%) ──
+    # Difficulty-scaled damage budget: easy incidents should stay tight,
+    # while hard incidents get a larger acceptable footprint.
+    spread_budget_cells = max(1, int(
+        total_burnable * SPREAD_BUDGET_RATIOS.get(req.task_id, SPREAD_BUDGET_RATIOS["medium"])
+    ))
+    spread_limit_score = max(0.0, 1.0 - cells_damaged / spread_budget_cells)
+
     # Clamp strictly within (0, 1) — validator requires score ∈ (0.0, 1.0)
     score = _strict_open_unit_interval(
-        structure_score * 0.60
-        + area_score * 0.30
-        + efficiency_score * 0.10
+        structure_score * GRADER_WEIGHTS["structure"]
+        + area_score * GRADER_WEIGHTS["area"]
+        + containment_score * GRADER_WEIGHTS["containment"]
+        + spread_limit_score * GRADER_WEIGHTS["spread_limit"]
+        + efficiency_score * GRADER_WEIGHTS["efficiency"]
     )
     structure_component = _strict_open_unit_interval(structure_score)
     area_component = _strict_open_unit_interval(area_score)
+    containment_component = _strict_open_unit_interval(containment_score)
+    spread_limit_component = _strict_open_unit_interval(spread_limit_score)
     efficiency_component = _strict_open_unit_interval(efficiency_score)
 
     return GraderResponse(
@@ -271,18 +308,24 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
         components={
             "structure_component": round(structure_component, 4),
             "area_component": round(area_component, 4),
+            "containment_component": round(containment_component, 4),
+            "spread_limit_component": round(spread_limit_component, 4),
             "efficiency_component": round(efficiency_component, 4),
-            "weights": {"structure": 0.60, "area": 0.30, "efficiency": 0.10},
+            "weights": GRADER_WEIGHTS,
             "saved_priority": saved_priority,
             "total_priority": total_priority,
             "reported_structures": len(req.structures),
             "expected_structures": len(expected_structures),
             "cells_damaged": cells_damaged,
             "total_burnable": total_burnable,
+            "active_fire_budget": active_fire_budget,
+            "spread_budget_cells": spread_budget_cells,
         },
         description=(
             f"Structure: {saved_priority}/{total_priority} priority saved. "
-            f"Area: {total_burnable - cells_damaged}/{total_burnable} burnable cells intact."
+            f"Area: {total_burnable - cells_damaged}/{total_burnable} burnable cells intact. "
+            f"Active fire: {req.burning_cells}/{active_fire_budget} containment budget. "
+            f"Spread: {cells_damaged}/{spread_budget_cells} damaged-cell budget."
         ),
     )
 

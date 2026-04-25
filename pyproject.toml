@@ -26,6 +26,8 @@ train = [
     "bitsandbytes",
     "accelerate",
     "safetensors",
+    "pillow",
+    "huggingface_hub",
 ]
 
 [project.scripts]
