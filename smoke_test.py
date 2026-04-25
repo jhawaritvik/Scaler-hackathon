@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Smoke test: one GRPO iteration with tiny config (~5 minutes on T4).
+Smoke test: one GRPO iteration with tiny config (~5 minutes on a 24 GB GPU).
 
 Run this FIRST before committing to a full curriculum training run.
 A clean exit (no crash, no NaN/inf in loss) means the pipeline is functional.
