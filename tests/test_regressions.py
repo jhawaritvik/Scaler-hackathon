@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from eval_policy import find_latest_adapter
 import smoke_test
 from plot_training_curves import (
     MetricSpec,
@@ -36,9 +37,9 @@ def test_grader_uses_seeded_structure_inventory() -> None:
 
     assert response.score == 0.3
     assert response.components["saved_priority"] == 0
-    assert response.components["total_priority"] == 7
+    assert response.components["total_priority"] == 8
     assert response.components["reported_structures"] == 1
-    assert response.components["expected_structures"] == 4
+    assert response.components["expected_structures"] == 5
 
 
 def test_busy_unit_visibility_handles_dispatched_units() -> None:
@@ -180,3 +181,21 @@ def test_submission_check_reports_missing_story_link() -> None:
     assert by_label["README has public Space link"].ok is True
     assert by_label["README links a writeup/video/slides"].ok is False
     assert by_label["README includes training plots/results"].ok is False
+
+
+def test_find_latest_adapter_prefers_final_then_latest_then_snapshot(monkeypatch) -> None:
+    root = Path("grpo_wildfire")
+    snapshot = str(root / "adapter_iter0010")
+    latest = str(root / "latest")
+    final = str(root / "final_adapter")
+
+    monkeypatch.setattr("eval_policy.glob.glob", lambda pattern: [snapshot])
+    monkeypatch.setattr("eval_policy.os.path.isdir", lambda path: path in {latest, final})
+
+    assert find_latest_adapter(str(root)) == final
+
+    monkeypatch.setattr("eval_policy.os.path.isdir", lambda path: path == latest)
+    assert find_latest_adapter(str(root)) == latest
+
+    monkeypatch.setattr("eval_policy.os.path.isdir", lambda path: False)
+    assert find_latest_adapter(str(root)) == snapshot

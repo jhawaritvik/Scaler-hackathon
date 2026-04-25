@@ -47,10 +47,10 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - **Live app:** [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
 - **Training pipeline:** [`train_grpo.py`](./train_grpo.py) (also runnable via [`notebooks/wildfire_grpo_minimal_colab.ipynb`](./notebooks/wildfire_grpo_minimal_colab.ipynb))
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) (84 fixed-seed episodes, no exploit-like policies flagged)
-- **Submission artifact helpers:** [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
+- **Submission artifact helpers:** [`record_qwen_run.py`](./record_qwen_run.py), [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
 - **Writeup / demo video / slides:** [`ENV_REVIEW.md`](./ENV_REVIEW.md) (interim technical writeup; replace with final public blog/video/slides URL)
-- **Training reward & loss plots:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png) and [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png)
-- **Trained-vs-baseline comparison:** [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json) and [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json)
+- **Post-run outputs:** `grpo_wildfire/config.json`, `grpo_wildfire/task_catalog.json`, `grpo_wildfire/run_status.json`, `grpo_wildfire/checkpoint_index.json`, `grpo_wildfire/latest_metrics.json`, `grpo_wildfire/final_adapter/`
+- **Submission artifacts after a real GPU run:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png), [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png), [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json), and [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json)
 
 ## What's in this repo
 
@@ -58,8 +58,10 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - FastAPI server exposing `/reset`, `/step`, `/state`, `/grader`, `/baseline`, `/tasks`, `/ws`, `/demo`
 - Deterministic heuristic baseline and deterministic grader for reproducible evaluation
 - Hand-rolled multi-turn GRPO training pipeline ([`train_grpo.py`](./train_grpo.py)) — Qwen3-4B-Instruct-2507 + 4-bit QLoRA (Unsloth) + XGrammar-constrained decoding
+- Run metadata + checkpoint index files so Kaggle / Hugging Face runs are restartable and auditable
 - GPU smoke test ([`smoke_test.py`](./smoke_test.py)) with NaN/Inf guards and preflight dependency checks
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-like-policy flagging
+- One-shot post-run exporter ([`record_qwen_run.py`](./record_qwen_run.py)) that turns a training directory into plots, eval JSONs, and a consolidated run record
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) that turns `log.jsonl` into judge-friendly SVG reward/loss curves with no extra plotting dependency
 - Submission readiness checker ([`submission_check.py`](./submission_check.py)) for the final hackathon packaging pass
 - Regression test suite ([`tests/test_regressions.py`](./tests/test_regressions.py))
@@ -150,8 +152,8 @@ Three graded difficulty levels with cellular-automaton fire spread
 | task | grid | max steps | ignitions | structures | crews | helicopter | airtanker | wind (km/h) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | easy | 15×15 | 20 | 1-2 + 0-1 delayed | 3-4 (P1) | 2-4 | 1 | 0 | 8-15 |
-| medium | 20×20 | 20 | 2 + 1-2 delayed | 4-5 (≤P2) | 3-4 | 1-2 | 0-1 | 12-22 |
-| hard | 25×25 | 25 | 2 + 1-2 delayed | 3-5 (≤P3) | 3-4 | 1 | 0-1 | 15-24 |
+| medium | 20×20 | 20 | 2 + 1-2 delayed | 4-6 (≤P2) | 3-4 | 1-2 | 0-1 | 12-22 |
+| hard | 25×25 | 25 | 2 + 2-3 delayed | 4-6 (≤P3) | 4-5 | 1-2 | 0-1 | 15-24 |
 
 Each task has a deterministic grader that returns `0.0` to `1.0` using:
 
@@ -380,30 +382,32 @@ Once you have GPU access, this is the clean path to a final submission package:
 ```bash
 .\.venv\Scripts\python.exe reward_audit.py --json-out reward_audit.json
 .\.venv\Scripts\python.exe train_grpo.py
-.\.venv\Scripts\python.exe plot_training_curves.py --log grpo_wildfire/log.jsonl --out-dir submission_artifacts
-.\.venv\Scripts\python.exe eval_policy.py --untrained --output submission_artifacts/eval_untrained.json
-.\.venv\Scripts\python.exe eval_policy.py --output submission_artifacts/eval_trained.json
+.\.venv\Scripts\python.exe record_qwen_run.py --run-dir grpo_wildfire --artifacts-dir submission_artifacts
 .\.venv\Scripts\python.exe submission_check.py --strict
 ```
 
-The helper outputs land in [`submission_artifacts/`](./submission_artifacts/),
-which is where the final reward/loss plots and eval JSONs should be committed
-before the final hackathon push.
+`train_grpo.py` now also writes `config.json`, `task_catalog.json`,
+`run_status.json`, `checkpoint_index.json`, `latest_metrics.json`, `latest/`,
+`best_adapter_<task>/`, and `final_adapter/` into the run directory, so a
+Kaggle or Hugging Face job can be resumed and audited without guessing paths.
+
+The exporter outputs land in [`submission_artifacts/`](./submission_artifacts/),
+which is where the final reward/loss plots, eval JSONs, and `run_record.json`
+should be committed before the final hackathon push.
 
 ## Results
 
-Current artifact snapshot (generated from the fixture training log to validate packaging paths):
+The repository is wired to generate these files after a real GPU run:
 
 - `submission_artifacts/training_reward_curve.png`
 - `submission_artifacts/training_loss_curve.png`
 - `submission_artifacts/training_summary.md`
 - `submission_artifacts/eval_untrained.json`
 - `submission_artifacts/eval_trained.json`
+- `submission_artifacts/run_record.json`
 
-Replace this snapshot with real run artifacts before final submission.
-
-![Training Reward Curve](./submission_artifacts/training_reward_curve.png)
-![Training Loss Curve](./submission_artifacts/training_loss_curve.png)
+Run `record_qwen_run.py` after training to materialize the plots and eval
+outputs for the current HEAD.
 
 ## Repository layout
 

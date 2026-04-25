@@ -200,13 +200,13 @@ Each `FleetUnit` tracks: `status` (available / en_route / operating / returning)
 | | easy | medium | hard |
 |---|---|---|---|
 | Seed | 7 | 6 | 9 |
-| Ignitions | 1 at step 0 + 1 at step 7 | 2 at step 0 + 1 at step 5 + 1 at step 6 | 2 at step 0 + 1 at step 4 |
+| Ignitions | 1 at step 0 + 1 at step 7 | 2 at step 0 + 1 at step 5 + 1 at step 6 | 2 at step 0 + 2 at step 4 |
 | Temperature | 29.4C | 32.5C | 38.1C |
 | Humidity | 42.5% | 30.2% | 38.5% |
 | Wind | 10.5 km/h | 19.2 km/h | 21.5 km/h |
 | Water bodies | 2 | 1 | 1 |
-| Structures | 4 x priority 1 | 1 x p1 + 3 x p2 | 2 x p1 + 2 x p2 |
-| Default seeded resources | 2c 1e 1h 1d | 3c 3e 2h 1d | 4c 2e 1h 1d |
+| Structures | 4 x priority 1 | 2 x p1 + 3 x p2 | 2 x p1 + 3 x p2 |
+| Default seeded resources | 2c 1e 1h 1d | 3c 3e 2h 1d | 5c 3e 1h 1a 2d 1s |
 | Warmup before first observation | 0 steps | 0 steps | 2 steps (40 min) |
 | Max steps | 20 | 20 | 25 |
 

@@ -53,6 +53,12 @@ EVAL_TASKS = {
 
 
 def find_latest_adapter(output_dir: str) -> str | None:
+    final_dir = os.path.join(output_dir, "final_adapter")
+    if os.path.isdir(final_dir):
+        return final_dir
+    latest_dir = os.path.join(output_dir, "latest")
+    if os.path.isdir(latest_dir):
+        return latest_dir
     checkpoints = sorted(glob.glob(os.path.join(output_dir, "adapter_iter*")))
     return checkpoints[-1] if checkpoints else None
 
@@ -148,8 +154,10 @@ def eval_policy(
 
     results["overall_mean"] = float(np.mean(all_scores))
     results["adapter_path"] = adapter_path or "base_model (zero-shot)"
+    results["model_name"] = config.model_name
+    results["eval_tasks"] = EVAL_TASKS
 
-    with open(output_json, "w") as fh:
+    with open(output_json, "w", encoding="utf-8") as fh:
         json.dump(results, fh, indent=2)
 
     print(f"\nOverall mean grader score: {results['overall_mean']:.4f}")

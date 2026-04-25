@@ -8,9 +8,7 @@ Recommended workflow from the repo root:
 ```bash
 .\.venv\Scripts\python.exe reward_audit.py --json-out reward_audit.json
 .\.venv\Scripts\python.exe train_grpo.py
-.\.venv\Scripts\python.exe plot_training_curves.py --log grpo_wildfire/log.jsonl --out-dir submission_artifacts
-.\.venv\Scripts\python.exe eval_policy.py --untrained --output submission_artifacts/eval_untrained.json
-.\.venv\Scripts\python.exe eval_policy.py --output submission_artifacts/eval_trained.json
+.\.venv\Scripts\python.exe record_qwen_run.py --run-dir grpo_wildfire --artifacts-dir submission_artifacts
 .\.venv\Scripts\python.exe submission_check.py --strict
 ```
 
@@ -21,6 +19,7 @@ Expected files:
 - `training_summary.md`
 - `eval_untrained.json`
 - `eval_trained.json`
+- `run_record.json`
 
 Final manual additions before submission:
 

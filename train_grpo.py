@@ -33,8 +33,13 @@ Architecture notes:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import platform
+import socket
+import traceback
+from datetime import datetime, timezone
 
 # Reduce CUDA memory fragmentation — must be set before torch is imported.
 os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
@@ -57,6 +62,7 @@ if _ROOT not in sys.path:
 
 from wildfire_env.server.wildfire_env_environment import WildfireEnvironment
 from wildfire_env.server.app import GraderRequest, _grade_episode
+from wildfire_env.server.terrain import DEFAULT_SEEDS, DIFFICULTY_SPECS
 from wildfire_env.models import WildfireAction, WildfireObservation
 
 # Third-party — install: pip install unsloth xgrammar bitsandbytes
@@ -109,6 +115,112 @@ class Config:
     grader_return_weight: float = 10.0     # grader contribution to total_return
     vary_env_seed_in_group: bool = True    # inject env variance across group members
     output_dir: str = "./grpo_wildfire"
+    save_every: int = 10
+    run_name: str = ""
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _torch_load(path: str, *, map_location: str = "cpu"):
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
+
+
+def _json_ready(value):
+    if isinstance(value, dict):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _write_json(path: str, payload: dict) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(_json_ready(payload), fh, indent=2)
+        fh.write("\n")
+
+
+def _relative_to_output(config: Config, path: str | None) -> str | None:
+    if path is None:
+        return None
+    return os.path.relpath(path, config.output_dir)
+
+
+def _default_run_name(config: Config) -> str:
+    if config.run_name:
+        return config.run_name
+    return config.model_name.rsplit("/", 1)[-1].lower().replace(" ", "_")
+
+
+def _write_static_run_files(config: Config, *, resumed: bool) -> None:
+    config_path = os.path.join(config.output_dir, "config.json")
+    task_catalog_path = os.path.join(config.output_dir, "task_catalog.json")
+    _write_json(config_path, vars(config))
+    _write_json(
+        task_catalog_path,
+        {
+            "run_name": _default_run_name(config),
+            "model_name": config.model_name,
+            "task_curriculum": [
+                {"task_id": task_id, "start_iter": start, "end_iter": end}
+                for task_id, start, end in config.task_curriculum
+            ],
+            "seeds_per_task": config.seeds_per_task,
+            "default_seeds": DEFAULT_SEEDS,
+            "difficulty_specs": {
+                task_id: vars(spec) for task_id, spec in DIFFICULTY_SPECS.items()
+            },
+            "resumed": resumed,
+        },
+    )
+
+
+def _write_checkpoint_index(
+    config: Config,
+    *,
+    best_grader_per_task: dict[str, float],
+    latest_metrics: dict | None = None,
+) -> None:
+    snapshot_dirs = sorted(
+        name
+        for name in os.listdir(config.output_dir)
+        if name.startswith("adapter_iter")
+        and os.path.isdir(os.path.join(config.output_dir, name))
+    )
+    best_adapters = {
+        task_id: _relative_to_output(config, os.path.join(config.output_dir, f"best_adapter_{task_id}"))
+        for task_id in config.seeds_per_task
+        if os.path.isdir(os.path.join(config.output_dir, f"best_adapter_{task_id}"))
+    }
+    latest_dir = os.path.join(config.output_dir, "latest")
+    final_dir = os.path.join(config.output_dir, "final_adapter")
+    _write_json(
+        os.path.join(config.output_dir, "checkpoint_index.json"),
+        {
+            "run_name": _default_run_name(config),
+            "model_name": config.model_name,
+            "output_dir": os.path.abspath(config.output_dir),
+            "log_path": _relative_to_output(config, os.path.join(config.output_dir, "log.jsonl")),
+            "config_path": _relative_to_output(config, os.path.join(config.output_dir, "config.json")),
+            "task_catalog_path": _relative_to_output(config, os.path.join(config.output_dir, "task_catalog.json")),
+            "run_status_path": _relative_to_output(config, os.path.join(config.output_dir, "run_status.json")),
+            "latest_metrics_path": _relative_to_output(config, os.path.join(config.output_dir, "latest_metrics.json")),
+            "resume_state_path": _relative_to_output(config, os.path.join(config.output_dir, "resume_state.json")),
+            "optimizer_state_path": _relative_to_output(config, os.path.join(config.output_dir, "optimizer_state.pt")),
+            "latest_adapter_path": _relative_to_output(config, latest_dir) if os.path.isdir(latest_dir) else None,
+            "final_adapter_path": _relative_to_output(config, final_dir) if os.path.isdir(final_dir) else None,
+            "best_adapter_paths": best_adapters,
+            "snapshot_paths": snapshot_dirs,
+            "best_grader_per_task": best_grader_per_task,
+            "latest_metrics": latest_metrics,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +825,7 @@ def make_logger(config: Config):
         if _wandb_ok:
             import wandb as _w
             _w.log(metrics)
-        with open(log_path, "a") as fh:
+        with open(log_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(metrics) + "\n")
 
     return _log
@@ -738,6 +850,11 @@ def train(config: Config):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(config.output_dir, exist_ok=True)
     log = make_logger(config)
+    latest_metrics_path = os.path.join(config.output_dir, "latest_metrics.json")
+    final_summary_path = os.path.join(config.output_dir, "final_summary.json")
+    run_status_path = os.path.join(config.output_dir, "run_status.json")
+    optimizer_state_path = os.path.join(config.output_dir, "optimizer_state.pt")
+    run_started_at = _utc_now()
 
     # ── Load model ──────────────────────────────────────────────────────────
     # Unsloth must be imported before transformers to apply all kernel patches.
@@ -778,6 +895,8 @@ def train(config: Config):
     best_grader_per_task: dict[str, float] = {}
     resume_dir    = os.path.join(config.output_dir, "latest")
     resume_state  = os.path.join(config.output_dir, "resume_state.json")
+    resume_meta: dict | None = None
+    resumed = False
     if os.path.isdir(resume_dir) and os.path.isfile(resume_state):
         from peft import set_peft_model_state_dict
         try:
@@ -786,23 +905,52 @@ def train(config: Config):
             if os.path.isfile(adapter_file):
                 state = _load_st(adapter_file, device="cpu")
             else:  # older PEFT saved .bin
-                state = torch.load(
+                state = _torch_load(
                     os.path.join(resume_dir, "adapter_model.bin"),
                     map_location="cpu",
                 )
             set_peft_model_state_dict(model, state)
-            with open(resume_state) as fh:
-                meta = json.load(fh)
-            start_iter = int(meta["next_iter"])
-            best_grader_per_task = {k: float(v) for k, v in meta.get("best_grader_per_task", {}).items()}
-            print(f"  ↻ Resumed from {resume_dir}  → start_iter={start_iter}  "
+            with open(resume_state, encoding="utf-8") as fh:
+                resume_meta = json.load(fh)
+            start_iter = int(resume_meta["next_iter"])
+            best_grader_per_task = {
+                k: float(v) for k, v in resume_meta.get("best_grader_per_task", {}).items()
+            }
+            resumed = True
+            print(f"  Resumed from {resume_dir}  -> start_iter={start_iter}  "
                   f"best={best_grader_per_task}")
         except Exception as exc:
-            print(f"  ⚠  resume failed ({exc}); starting from scratch")
+            print(f"  [warn] resume failed ({exc}); starting from scratch")
             start_iter = 0
             best_grader_per_task = {}
+            resume_meta = None
+            resumed = False
 
     # ── XGrammar ────────────────────────────────────────────────────────────
+    _write_static_run_files(config, resumed=resumed)
+    _write_json(
+        run_status_path,
+        {
+            "run_name": _default_run_name(config),
+            "state": "initializing",
+            "started_at_utc": run_started_at,
+            "updated_at_utc": run_started_at,
+            "hostname": socket.gethostname(),
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "device": str(device),
+            "output_dir": os.path.abspath(config.output_dir),
+            "model_name": config.model_name,
+            "resumed": resumed,
+            "resume_dir": _relative_to_output(config, resume_dir) if resumed else None,
+            "start_iter": start_iter,
+            "total_iterations": config.total_iterations,
+            "log_path": _relative_to_output(config, os.path.join(config.output_dir, "log.jsonl")),
+            "latest_metrics_path": _relative_to_output(config, latest_metrics_path),
+            "best_grader_per_task": best_grader_per_task,
+        },
+    )
+    _write_checkpoint_index(config, best_grader_per_task=best_grader_per_task)
     print("Compiling WildfireAction JSON schema grammar …")
     compiler = build_grammar_compiler(tokenizer, model)
     compiled_grammar = compiler.compile_json_schema(WildfireAction.model_json_schema())
@@ -823,6 +971,13 @@ def train(config: Config):
         )
         print(f"  Using standard AdamW optimizer, wd={config.weight_decay}")
 
+    if resumed and resume_meta and os.path.isfile(optimizer_state_path):
+        try:
+            optimizer.load_state_dict(_torch_load(optimizer_state_path, map_location="cpu"))
+            print(f"  Restored optimizer state from {optimizer_state_path}")
+        except Exception as exc:
+            print(f"  [warn] optimizer resume failed ({exc}); continuing with fresh state")
+
     # ── LR schedule: linear warmup → cosine decay to lr_min ────────────────
     # Warmup fights the iter-0 loss spike (prior run hit +17 on iter 0 because
     # the full 3e-5 LR met uncalibrated advantages). Cosine then handles the
@@ -841,6 +996,7 @@ def train(config: Config):
 
     # ── Training iterations ─────────────────────────────────────────────────
     # (best_grader_per_task is initialized above, possibly from resume state)
+    latest_metrics: dict | None = None
     for iteration in range(start_iter, config.total_iterations):
         task_id    = get_task_for_iter(iteration, config)
         seed_pool  = config.seeds_per_task[task_id]
@@ -924,6 +1080,7 @@ def train(config: Config):
             "mean_grader_score":         float(g_scores.mean()),
             "max_grader_score":          float(g_scores.max()),
             "per_seed_grader":           {s: g for s, g, _ in per_seed_meta},
+            "per_seed_return_std":       {s: std for s, _, std in per_seed_meta},
             "action_parse_success_rate": parse_ok / max(1, parse_total),
             "mean_episode_steps":        float(ep_steps.mean()),
             "mean_plan_chars_per_step":  total_plan_chars / total_episode_steps,
@@ -934,7 +1091,9 @@ def train(config: Config):
             "rollout_seconds":           rollout_secs,
             "update_seconds":            update_secs,
         }
+        latest_metrics = metrics
         log(metrics)
+        _write_json(latest_metrics_path, metrics)
         per_seed_str = "  ".join(f"s{s}={g:.2f}" for s, g, _ in per_seed_meta)
         print(
             f"  loss={metrics['policy_loss']:+.4f}  "
@@ -965,23 +1124,137 @@ def train(config: Config):
         # iter pointer and per-task best-grader map.
         latest_dir = os.path.join(config.output_dir, "latest")
         model.save_pretrained(latest_dir)
-        with open(os.path.join(config.output_dir, "resume_state.json"), "w") as fh:
-            json.dump({
+        tokenizer.save_pretrained(latest_dir)
+        torch.save(optimizer.state_dict(), optimizer_state_path)
+        _write_json(
+            os.path.join(config.output_dir, "resume_state.json"),
+            {
                 "next_iter":             iteration + 1,
                 "best_grader_per_task":  best_grader_per_task,
                 "total_iterations":      config.total_iterations,
-            }, fh, indent=2)
+                "resumed_from_previous_run": resumed,
+                "updated_at_utc":        _utc_now(),
+            },
+        )
 
-        # ── Periodic snapshot every 10 iters ───────────────────────────────
-        if (iteration + 1) % 10 == 0 or iteration == config.total_iterations - 1:
+        # ── Periodic snapshot every N iters ────────────────────────────────
+        if (iteration + 1) % config.save_every == 0 or iteration == config.total_iterations - 1:
             ckpt = os.path.join(config.output_dir, f"adapter_iter{iteration + 1:04d}")
             model.save_pretrained(ckpt)
             tokenizer.save_pretrained(ckpt)
             print(f"  Saved → {ckpt}")
 
+        _write_json(
+            run_status_path,
+            {
+                "run_name": _default_run_name(config),
+                "state": "running",
+                "started_at_utc": run_started_at,
+                "updated_at_utc": _utc_now(),
+                "hostname": socket.gethostname(),
+                "platform": platform.platform(),
+                "python_version": platform.python_version(),
+                "device": str(device),
+                "output_dir": os.path.abspath(config.output_dir),
+                "model_name": config.model_name,
+                "resumed": resumed,
+                "start_iter": start_iter,
+                "last_completed_iter": iteration,
+                "next_iter": iteration + 1,
+                "total_iterations": config.total_iterations,
+                "task_id": task_id,
+                "seeds": chosen_seeds,
+                "best_grader_per_task": best_grader_per_task,
+                "log_path": _relative_to_output(config, os.path.join(config.output_dir, "log.jsonl")),
+                "latest_metrics_path": _relative_to_output(config, latest_metrics_path),
+                "latest_adapter_path": _relative_to_output(config, latest_dir),
+                "optimizer_state_path": _relative_to_output(config, optimizer_state_path),
+            },
+        )
+        _write_checkpoint_index(
+            config,
+            best_grader_per_task=best_grader_per_task,
+            latest_metrics=latest_metrics,
+        )
+
+    final_dir = os.path.join(config.output_dir, "final_adapter")
+    model.save_pretrained(final_dir)
+    tokenizer.save_pretrained(final_dir)
+    _write_json(
+        final_summary_path,
+        {
+            "run_name": _default_run_name(config),
+            "state": "completed",
+            "started_at_utc": run_started_at,
+            "completed_at_utc": _utc_now(),
+            "output_dir": os.path.abspath(config.output_dir),
+            "model_name": config.model_name,
+            "total_iterations": config.total_iterations,
+            "best_grader_per_task": best_grader_per_task,
+            "latest_metrics": latest_metrics,
+            "final_adapter_path": _relative_to_output(config, final_dir),
+        },
+    )
+    _write_json(
+        run_status_path,
+        {
+            "run_name": _default_run_name(config),
+            "state": "completed",
+            "started_at_utc": run_started_at,
+            "updated_at_utc": _utc_now(),
+            "device": str(device),
+            "output_dir": os.path.abspath(config.output_dir),
+            "model_name": config.model_name,
+            "resumed": resumed,
+            "start_iter": start_iter,
+            "total_iterations": config.total_iterations,
+            "best_grader_per_task": best_grader_per_task,
+            "latest_metrics_path": _relative_to_output(config, latest_metrics_path),
+            "final_summary_path": _relative_to_output(config, final_summary_path),
+            "final_adapter_path": _relative_to_output(config, final_dir),
+        },
+    )
+    _write_checkpoint_index(
+        config,
+        best_grader_per_task=best_grader_per_task,
+        latest_metrics=latest_metrics,
+    )
+
     print("\nTraining complete.")
     print("Best grader per task:", best_grader_per_task)
+    print(f"Final adapter saved to {final_dir}")
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train the wildfire GRPO policy.")
+    parser.add_argument("--model-name", default=None, help="Override the base model name.")
+    parser.add_argument("--output-dir", default=None, help="Directory for checkpoints and logs.")
+    parser.add_argument("--total-iterations", type=int, default=None, help="Override total_iterations.")
+    parser.add_argument("--group-size", type=int, default=None, help="Override group_size.")
+    parser.add_argument("--seeds-per-iter", type=int, default=None, help="Override seeds_per_iter.")
+    parser.add_argument("--learning-rate", type=float, default=None, help="Override learning_rate.")
+    parser.add_argument("--save-every", type=int, default=None, help="Save a snapshot every N iterations.")
+    parser.add_argument("--run-name", default=None, help="Optional human-friendly run label.")
+    return parser.parse_args()
+
+
+def build_config_from_args(args: argparse.Namespace) -> Config:
+    base = Config()
+    overrides = {}
+    for arg_name, field_name in (
+        ("model_name", "model_name"),
+        ("output_dir", "output_dir"),
+        ("total_iterations", "total_iterations"),
+        ("group_size", "group_size"),
+        ("seeds_per_iter", "seeds_per_iter"),
+        ("learning_rate", "learning_rate"),
+        ("save_every", "save_every"),
+        ("run_name", "run_name"),
+    ):
+        value = getattr(args, arg_name)
+        if value is not None:
+            overrides[field_name] = value
+    return type(base)(**{**vars(base), **overrides})
 
 
 if __name__ == "__main__":
-    train(Config())
+    train(build_config_from_args(parse_args()))
