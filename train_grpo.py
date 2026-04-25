@@ -2,27 +2,21 @@
 """
 Multi-turn GRPO training pipeline for the wildfire incident-command environment.
 
-Target hardware:
-  - T4 (16 GB, Colab free tier): use Qwen/Qwen3-1.7B as a fallback
-  - On-site / A100 (40+ GB):     use Qwen/Qwen3-4B-Instruct-2507  ← default model_name
+Target hardware: 24 GB+ GPU (L4, A10G, A100, etc.) running Qwen/Qwen3-4B-Instruct-2507.
 
-Expected peak VRAM for Qwen3-1.7B on T4:
-  - Base model (4-bit NF4 QLoRA):              ~1.1 GB
+Expected peak VRAM for Qwen3-4B (4-bit QLoRA):
+  - Base model (4-bit NF4 QLoRA):              ~2.5 GB
   - LoRA adapters (rank=16, attn only):         ~0.05 GB
   - Gradient-checkpointed backward pass
-    (one seq at a time in _logprobs_for_batch): ~2-4 GB
-  - AdamW 8-bit optimizer states:               ~0.2 GB
+    (one seq at a time in _logprobs_for_batch): ~6-10 GB
+  - AdamW 8-bit optimizer states:               ~0.4 GB
   - XGrammar compiled grammar + bitmask cache:  ~0.2 GB
-  Total (conservative):                         ~5-7 GB  ← comfortable on T4
-
-Expected peak VRAM for Qwen3-4B on A100 (40 GB):
-  - Base model (4-bit NF4 QLoRA):              ~2.5 GB
-  - Same breakdown above scaled up:            ~10-14 GB total
+  Total (conservative):                         ~10-14 GB
 
 Architecture notes:
   - fast_inference=False is required so model.generate() accepts HF LogitsProcessors.
     XGrammarLogitsProcessor is a transformers.LogitsProcessor; vLLM ignores it.
-    Speed cost vs fast_inference=True: ~3-5× slower rollout on T4 — still viable.
+    Speed cost vs fast_inference=True: ~3-5× slower rollout — still viable.
   - GRPO loss is hand-rolled.  TRL's GRPOTrainer assumes single-turn rollouts;
     multi-turn trajectory-level advantages require a custom loop.
   - Reference policy = base model with LoRA disabled (model.disable_adapter()).
@@ -466,6 +460,10 @@ def rollout_episode(
 
         # New XGrammarLogitsProcessor instance required per generate() call.
         xgr_proc = XGrammarLogitsProcessor(compiled_grammar)
+        # Workaround: Unsloth 2026.3.11 has a Qwen3 RoPE shape bug in its
+        # inference-mode forward (fast_forward_inference). Setting train()
+        # forces the non-buggy training-mode path during generation.
+        model.train()
         gen_out = model.generate(
             prompt_ids_t,
             max_new_tokens=config.max_new_tokens,
@@ -476,6 +474,7 @@ def rollout_episode(
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
+        model.eval()
         completion_ids = gen_out[0, prompt_len:].tolist()
         comp_len = len(completion_ids)
         del gen_out  # free KV-cache storage held by the output tensor
@@ -648,7 +647,7 @@ def _logprobs_for_batch(
     "mat1 and mat2 shapes cannot be multiplied" crash, where `model.model`
     was actually Qwen3ForCausalLM and returned logits instead of hidden states).
 
-    For Qwen3-1.7B (V=151936, H=2048) at L≈600, c≈100 in fp16:
+    For Qwen3-4B (V=151936) at L≈600, c≈100 in fp16:
       Without: L × V × 2 B ≈ 183 MB per sequence (full logits)
       With:    c × V × 2 B ≈  30 MB per sequence (~6× reduction)
     """
@@ -785,8 +784,8 @@ def grpo_update(
             epoch_loss += loss_i.item()
             n_samples += 1
 
-            # Free the graph eagerly — matters on T4 where the next forward
-            # would otherwise trip OOM before Python GC runs.
+            # Free the graph eagerly — the next forward would otherwise
+            # trip OOM before Python GC runs on tight VRAM budgets.
             del new_lp, ratio, clipped, surrogate, loss_i
             if ref_lp is not None:
                 del ref_lp

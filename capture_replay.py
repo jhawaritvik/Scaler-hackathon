@@ -162,6 +162,7 @@ def capture_llm(
         ).input_ids.to(device)
 
         xgr_proc = XGrammarLogitsProcessor(compiled_grammar)
+        model.train()  # workaround: unsloth 2026.3.11 Qwen3 RoPE bug in inference path
         gen_out = model.generate(
             prompt_ids,
             max_new_tokens=max_new_tokens,
@@ -172,6 +173,7 @@ def capture_llm(
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
+        model.eval()
         completion_ids = gen_out[0, prompt_ids.shape[1]:].tolist()
         raw_text = tokenizer.decode(completion_ids, skip_special_tokens=True)
         try:
