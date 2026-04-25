@@ -23,7 +23,8 @@ class CheckResult:
 
 
 SPACE_PATTERN = re.compile(r"https://huggingface\.co/spaces/[^\s)]+")
-NOTEBOOK_PATTERN = re.compile(r"wildfire_grpo_minimal_colab\.ipynb")
+TRAINING_NOTEBOOK_PATTERN = re.compile(r"wildfire_training_eval_hf\.ipynb")
+BASELINE_NOTEBOOK_PATTERN = re.compile(r"wildfire_untrained_eval_kaggle\.ipynb")
 PLOT_IMAGE_PATTERNS = {
     "reward": re.compile(r"!\[[^\]]*\]\([^)]+training_reward_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
     "loss": re.compile(r"!\[[^\]]*\]\([^)]+training_loss_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
@@ -43,7 +44,8 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
         ("Evaluation script", repo_root / "eval_policy.py"),
         ("Reward audit", repo_root / "reward_audit.py"),
         ("Regression tests", repo_root / "tests" / "test_regressions.py"),
-        ("Colab notebook", repo_root / "notebooks" / "wildfire_grpo_minimal_colab.ipynb"),
+        ("HF training notebook", repo_root / "notebooks" / "wildfire_training_eval_hf.ipynb"),
+        ("Kaggle untrained eval notebook", repo_root / "notebooks" / "wildfire_untrained_eval_kaggle.ipynb"),
     ]
 
     checks = [
@@ -61,8 +63,15 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
     checks.append(
         CheckResult(
             "README links the training notebook",
-            bool(NOTEBOOK_PATTERN.search(readme)),
-            "found" if NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_grpo_minimal_colab.ipynb from README.md",
+            bool(TRAINING_NOTEBOOK_PATTERN.search(readme)),
+            "found" if TRAINING_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_training_eval_hf.ipynb from README.md",
+        )
+    )
+    checks.append(
+        CheckResult(
+            "README links the baseline notebook",
+            bool(BASELINE_NOTEBOOK_PATTERN.search(readme)),
+            "found" if BASELINE_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_untrained_eval_kaggle.ipynb from README.md",
         )
     )
     checks.append(

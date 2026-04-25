@@ -45,7 +45,7 @@ This submission is a single-agent world-modeling environment with long-horizon p
 
 - **Live Space:** [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
 - **Live app:** [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
-- **Training pipeline:** [`train_grpo.py`](./train_grpo.py) (also runnable via [`notebooks/wildfire_grpo_minimal_colab.ipynb`](./notebooks/wildfire_grpo_minimal_colab.ipynb))
+- **Training pipeline:** [`train_grpo.py`](./train_grpo.py) (also runnable via [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb))
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) (84 fixed-seed episodes, no exploit-like policies flagged)
 - **Submission artifact helpers:** [`record_qwen_run.py`](./record_qwen_run.py), [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
 - **Writeup / demo video / slides:** [`ENV_REVIEW.md`](./ENV_REVIEW.md) (interim technical writeup; replace with final public blog/video/slides URL)
@@ -65,7 +65,7 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) that turns `log.jsonl` into judge-friendly SVG reward/loss curves with no extra plotting dependency
 - Submission readiness checker ([`submission_check.py`](./submission_check.py)) for the final hackathon packaging pass
 - Regression test suite ([`tests/test_regressions.py`](./tests/test_regressions.py))
-- Colab-friendly notebook scaffold ([`notebooks/wildfire_grpo_minimal_colab.ipynb`](./notebooks/wildfire_grpo_minimal_colab.ipynb))
+- Hugging Face training notebook ([`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)) and Kaggle untrained baseline notebook ([`notebooks/wildfire_untrained_eval_kaggle.ipynb`](./notebooks/wildfire_untrained_eval_kaggle.ipynb))
 
 ## Why this environment
 
@@ -362,9 +362,10 @@ Qwen3-4B-Instruct-2507 (4-bit QLoRA via Unsloth) + XGrammar-constrained decoding
 hand-rolled GRPO loop (TRL's GRPOTrainer is single-turn only; multi-turn
 trajectory advantages require a custom loop).
 
-Colab notebook scaffold:
+Notebook workflows:
 
-- `notebooks/wildfire_grpo_minimal_colab.ipynb`
+- `notebooks/wildfire_untrained_eval_kaggle.ipynb` — run first on Kaggle to produce the untrained baseline artifact
+- `notebooks/wildfire_training_eval_hf.ipynb` — run on Hugging Face GPU runtime for GRPO training and trained-model evaluation
 
 Install training extras with:
 
@@ -422,6 +423,7 @@ outputs for the current HEAD.
 - `submission_check.py` — final packaging checker for hackathon submission
 - `tests/test_regressions.py` — regression tests
 - `submission_artifacts/` — generated training plots, eval JSONs, and final evidence
-- `notebooks/wildfire_grpo_minimal_colab.ipynb` — Colab scaffold
+- `notebooks/wildfire_untrained_eval_kaggle.ipynb` — Kaggle untrained baseline evaluation
+- `notebooks/wildfire_training_eval_hf.ipynb` — Hugging Face GPU training and trained evaluation
 - `wildfire_env/` — environment package (see `wildfire_env/README.md` for
   internals)
