@@ -43,10 +43,12 @@ import xgrammar as xgr
 
 
 # Fixed seeds: same set across all runs so eval numbers are reproducible.
+# Fully held-out from train_grpo.py:Config.seeds_per_task — no overlap. All
+# seeds verified to produce heuristic grader in 0.2-0.85 (meaningful signal).
 EVAL_TASKS = {
-    "easy":   [42, 100, 200, 300, 400],
-    "medium": [67, 101, 201, 301, 401],
-    "hard":   [12, 102, 202, 302, 402],
+    "easy":   [11, 18, 25, 56, 76],
+    "medium": [1, 7, 28, 61, 69],
+    "hard":   [9, 28, 32, 61, 75],
 }
 
 
@@ -68,7 +70,9 @@ def load_model_for_eval(adapter_path: str | None, config: Config, device: torch.
     print(f"Loading base model {config.model_name} …")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model_name,
-        max_seq_length=2048,
+        # Match train_grpo.py: 25x25 hard observations + action_guide approach
+        # 2k tokens; 2048 silently truncates and tanks the eval grader score.
+        max_seq_length=3072,
         dtype=None,
         load_in_4bit=True,
         fast_inference=False,

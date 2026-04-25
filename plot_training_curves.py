@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-r"""Generate lightweight SVG training plots from GRPO JSONL logs.
+r"""Generate lightweight training plots from GRPO JSONL logs.
 
 This script has no plotting-library dependency. It reads the JSONL metrics
-emitted by ``train_grpo.py`` and writes judge-friendly SVG plots plus a short
-markdown summary that can be embedded into the README.
+emitted by ``train_grpo.py`` and writes judge-friendly SVG/PNG plots plus a
+short markdown summary that can be embedded into the README.
 
 Typical use:
 
@@ -21,6 +21,8 @@ import math
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 
 @dataclass(frozen=True)
@@ -237,6 +239,205 @@ def write_svg(path: Path, title: str, records: list[dict], specs: list[MetricSpe
     path.write_text(render_svg_dashboard(title, records, specs), encoding="utf-8")
 
 
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    stripped = color.lstrip("#")
+    if len(stripped) != 6:
+        raise ValueError(f"Expected #RRGGBB color, got {color!r}")
+    return tuple(int(stripped[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def _load_font(size: int, *, bold: bool = False) -> ImageFont.ImageFont:
+    candidates = ("DejaVuSans-Bold.ttf", "arialbd.ttf") if bold else ("DejaVuSans.ttf", "arial.ttf")
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def _text_bbox(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> tuple[int, int, int, int]:
+    return draw.textbbox((0, 0), text, font=font)
+
+
+def _draw_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    text: str,
+    *,
+    font: ImageFont.ImageFont,
+    fill: tuple[int, int, int] | tuple[int, int, int, int],
+    anchor: str = "la",
+) -> None:
+    draw.text((int(round(xy[0])), int(round(xy[1]))), text, font=font, fill=fill, anchor=anchor)
+
+
+def _render_png_chart(
+    draw: ImageDraw.ImageDraw,
+    records: list[dict],
+    spec: MetricSpec,
+    top: int,
+    chart_height: int,
+    width: int,
+    plot_left: int,
+    plot_width: int,
+    fonts: dict[str, ImageFont.ImageFont],
+) -> None:
+    del width  # Layout is driven by plot_left/plot_width; width is unused here.
+
+    x_values = [int(record["iter"]) for record in records]
+    y_values = [float(record[spec.key]) for record in records]
+    x_min, x_max = min(x_values), max(x_values)
+    y_min, y_max = _value_bounds(y_values)
+
+    plot_top = top + 28
+    plot_height = chart_height - 54
+
+    slate_900 = (15, 23, 42)
+    slate_700 = (51, 65, 85)
+    slate_600 = (71, 85, 105)
+    slate_400 = (148, 163, 184)
+    slate_300 = (203, 213, 225)
+    slate_200 = (226, 232, 240)
+    white = (255, 255, 255)
+
+    _draw_text(
+        draw,
+        (plot_left, top + 14),
+        spec.title,
+        font=fonts["chart_title"],
+        fill=slate_900,
+        anchor="ls",
+    )
+
+    for task_id, start_iter, end_iter in _task_spans(records):
+        x0 = _x_to_svg(start_iter, x_min, x_max, plot_left, plot_width)
+        x1 = _x_to_svg(end_iter, x_min, x_max, plot_left, plot_width)
+        span_width = max(1.0, x1 - x0)
+        fill = _hex_to_rgb(TASK_COLORS.get(task_id, "#e2e8f0")) + (64,)
+        draw.rectangle(
+            (
+                int(round(x0)),
+                plot_top,
+                int(round(x0 + span_width)),
+                plot_top + plot_height,
+            ),
+            fill=fill,
+        )
+
+    draw.rectangle(
+        (plot_left, plot_top, plot_left + plot_width, plot_top + plot_height),
+        fill=white,
+        outline=slate_300,
+        width=1,
+    )
+
+    for tick in range(5):
+        fraction = tick / 4.0
+        y_value = y_min + (y_max - y_min) * (1.0 - fraction)
+        y = plot_top + fraction * plot_height
+        draw.line((plot_left, y, plot_left + plot_width, y), fill=slate_200, width=1)
+        label = spec.value_format.format(value=y_value)
+        bbox = _text_bbox(draw, label, fonts["tick"])
+        label_x = plot_left - 12 - (bbox[2] - bbox[0])
+        _draw_text(
+            draw,
+            (label_x, y + 4),
+            label,
+            font=fonts["tick"],
+            fill=slate_600,
+            anchor="la",
+        )
+
+    for record in records:
+        x = _x_to_svg(int(record["iter"]), x_min, x_max, plot_left, plot_width)
+        draw.line(
+            (x, plot_top + plot_height, x, plot_top + plot_height + 5),
+            fill=slate_400,
+            width=1,
+        )
+
+    line_points = [
+        (
+            _x_to_svg(int(record["iter"]), x_min, x_max, plot_left, plot_width),
+            _y_to_svg(float(record[spec.key]), y_min, y_max, plot_top, plot_height),
+        )
+        for record in records
+    ]
+    if len(line_points) >= 2:
+        draw.line(line_points, fill=_hex_to_rgb(spec.color), width=3, joint="curve")
+
+    for x, y in line_points:
+        draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=_hex_to_rgb(spec.color))
+
+    _draw_text(
+        draw,
+        (plot_left + plot_width / 2.0, plot_top + plot_height + 24),
+        "training iteration",
+        font=fonts["axis"],
+        fill=slate_600,
+        anchor="ms",
+    )
+
+    legend_x = plot_left + plot_width - 160
+    draw.rounded_rectangle(
+        (legend_x, top + 2, legend_x + 152, top + 20),
+        radius=4,
+        fill=white,
+        outline=slate_200,
+        width=1,
+    )
+    for idx, task_id in enumerate(("easy", "medium", "hard")):
+        x = legend_x + 8 + idx * 48
+        draw.rectangle((x, top + 7, x + 10, top + 15), fill=_hex_to_rgb(TASK_COLORS[task_id]))
+        _draw_text(
+            draw,
+            (x + 14, top + 14),
+            task_id,
+            font=fonts["tick"],
+            fill=slate_700,
+            anchor="ls",
+        )
+
+
+def render_png_dashboard(title: str, records: list[dict], specs: list[MetricSpec]) -> Image.Image:
+    width = 920
+    chart_height = 220
+    height = 54 + len(specs) * chart_height
+    plot_left = 84
+    plot_width = width - 120
+
+    image = Image.new("RGBA", (width, height), (248, 250, 252, 255))
+    draw = ImageDraw.Draw(image)
+    fonts = {
+        "title": _load_font(20, bold=True),
+        "subtitle": _load_font(11),
+        "chart_title": _load_font(14, bold=True),
+        "axis": _load_font(11),
+        "tick": _load_font(10),
+    }
+
+    _draw_text(draw, (32, 30), title, font=fonts["title"], fill=(15, 23, 42), anchor="ls")
+    _draw_text(
+        draw,
+        (32, 48),
+        "Generated from train_grpo.py JSONL logs by plot_training_curves.py",
+        font=fonts["subtitle"],
+        fill=(71, 85, 105),
+        anchor="ls",
+    )
+
+    for idx, spec in enumerate(specs):
+        top = 54 + idx * chart_height
+        _render_png_chart(draw, records, spec, top, chart_height, width, plot_left, plot_width, fonts)
+
+    return image.convert("RGB")
+
+
+def write_png(path: Path, title: str, records: list[dict], specs: list[MetricSpec]) -> None:
+    render_png_dashboard(title, records, specs).save(path, format="PNG")
+
+
 def build_summary_markdown(records: list[dict]) -> str:
     best_by_task: dict[str, dict] = {}
     for record in records:
@@ -278,7 +479,7 @@ def write_summary(path: Path, records: list[dict]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate SVG training plots from GRPO JSONL logs.")
+    parser = argparse.ArgumentParser(description="Generate SVG/PNG training plots from GRPO JSONL logs.")
     parser.add_argument(
         "--log",
         type=Path,
@@ -289,7 +490,7 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         type=Path,
         default=Path("submission_artifacts"),
-        help="Directory for SVG plots and summary markdown.",
+        help="Directory for training plots and summary markdown.",
     )
     return parser.parse_args()
 
@@ -314,12 +515,18 @@ def main() -> None:
         MetricSpec("clip_fraction", "Clip Fraction", "#ea580c"),
     ]
 
-    write_svg(args.out_dir / "training_reward_curve.svg", "Wildfire GRPO Reward Curves", records, reward_specs)
-    write_svg(args.out_dir / "training_loss_curve.svg", "Wildfire GRPO Optimisation Curves", records, loss_specs)
+    reward_title = "Wildfire GRPO Reward Curves"
+    loss_title = "Wildfire GRPO Optimisation Curves"
+    write_svg(args.out_dir / "training_reward_curve.svg", reward_title, records, reward_specs)
+    write_svg(args.out_dir / "training_loss_curve.svg", loss_title, records, loss_specs)
+    write_png(args.out_dir / "training_reward_curve.png", reward_title, records, reward_specs)
+    write_png(args.out_dir / "training_loss_curve.png", loss_title, records, loss_specs)
     write_summary(args.out_dir / "training_summary.md", records)
 
     print(f"Wrote {args.out_dir / 'training_reward_curve.svg'}")
     print(f"Wrote {args.out_dir / 'training_loss_curve.svg'}")
+    print(f"Wrote {args.out_dir / 'training_reward_curve.png'}")
+    print(f"Wrote {args.out_dir / 'training_loss_curve.png'}")
     print(f"Wrote {args.out_dir / 'training_summary.md'}")
 
 

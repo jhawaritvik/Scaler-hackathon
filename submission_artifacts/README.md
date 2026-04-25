@@ -16,8 +16,8 @@ Recommended workflow from the repo root:
 
 Expected files:
 
-- `training_reward_curve.svg`
-- `training_loss_curve.svg`
+- `training_reward_curve.png`
+- `training_loss_curve.png`
 - `training_summary.md`
 - `eval_untrained.json`
 - `eval_trained.json`
@@ -25,5 +25,5 @@ Expected files:
 Final manual additions before submission:
 
 - replace the README placeholder with your public HF blog / YouTube demo / slide deck link
-- embed `training_reward_curve.svg` and `training_loss_curve.svg` into the root README
+- embed `training_reward_curve.png` and `training_loss_curve.png` into the root README
 - add a short trained-vs-baseline table using the two eval JSON files

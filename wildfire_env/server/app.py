@@ -22,6 +22,7 @@ Standard OpenEnv endpoints (via create_app):
 """
 
 import asyncio
+import math
 
 import numpy as np
 from fastapi import Body, WebSocket, WebSocketDisconnect
@@ -290,56 +291,272 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
 # Heuristic baseline agent (used by /baseline endpoint)
 # ---------------------------------------------------------------------------
 
-def _heuristic_action(obs: WildfireObservation) -> WildfireAction:
-    """Rule-based heuristic: attack the highest-intensity burning cell."""
-    assignments = []
-    grid_max = (len(obs.fuel_types[0]) - 1) if obs.fuel_types else 14
+def _clamp_cell(value: int, grid_max: int) -> int:
+    return max(0, min(grid_max, value))
 
-    target_point: GridPoint | None = None
-    if obs.fire_details:
-        best = max(obs.fire_details, key=lambda f: f.intensity)
-        target_point = GridPoint(row=best.row, col=best.col)
+
+def _manhattan(row_a: float, col_a: float, row_b: float, col_b: float) -> float:
+    return abs(float(row_a) - float(row_b)) + abs(float(col_a) - float(col_b))
+
+
+def _build_line_between_fire_and_structure(
+    structure,
+    fire,
+    grid_max: int,
+    *,
+    offset: int,
+    half_span: int,
+) -> list[GridPoint]:
+    """Construct a short defensive line perpendicular to the fire-structure axis."""
+    row_gap = structure.row - fire.row
+    col_gap = structure.col - fire.col
+
+    if abs(row_gap) >= abs(col_gap):
+        line_row = _clamp_cell(structure.row - (offset if row_gap > 0 else -offset), grid_max)
+        start = GridPoint(row=line_row, col=_clamp_cell(structure.col - half_span, grid_max))
+        end = GridPoint(row=line_row, col=_clamp_cell(structure.col + half_span, grid_max))
     else:
+        line_col = _clamp_cell(structure.col - (offset if col_gap > 0 else -offset), grid_max)
+        start = GridPoint(row=_clamp_cell(structure.row - half_span, grid_max), col=line_col)
+        end = GridPoint(row=_clamp_cell(structure.row + half_span, grid_max), col=line_col)
+
+    return [start, end]
+
+
+def _midpoint_target(row_a: int, col_a: int, row_b: int, col_b: int, grid_max: int) -> GridPoint:
+    return GridPoint(
+        row=_clamp_cell(int(round((row_a + row_b) / 2.0)), grid_max),
+        col=_clamp_cell(int(round((col_a + col_b) / 2.0)), grid_max),
+    )
+
+
+def _staging_point_for_structure(structure, grid_max: int) -> GridPoint:
+    return GridPoint(
+        row=_clamp_cell(structure.row, grid_max),
+        col=_clamp_cell(structure.col, grid_max),
+    )
+
+
+def _heuristic_action(obs: WildfireObservation) -> WildfireAction:
+    """Structure-aware deterministic baseline for the `/baseline` endpoint."""
+    grid_max = (len(obs.fuel_types[0]) - 1) if obs.fuel_types else 14
+    available_units = [unit for unit in obs.fleet_units if unit.status == "available"]
+    if not available_units:
         return WildfireAction()
 
-    for unit in obs.fleet_units:
-        if unit.status != "available":
+    live_structures = [s for s in obs.structures if s.status.lower() != "burned"]
+    if live_structures:
+        structure_rank = []
+        for structure in live_structures:
+            nearest_fire = min(
+                (_manhattan(structure.row, structure.col, fire.row, fire.col) for fire in obs.fire_details),
+                default=math.inf,
+            )
+            nearest_heat = min(
+                (_manhattan(structure.row, structure.col, heat.row, heat.col) for heat in obs.heat_warnings),
+                default=math.inf,
+            )
+            status = structure.status.lower()
+            threat_score = float(structure.priority) * 10.0
+            if status == "burning":
+                threat_score += 20.0
+            if nearest_fire < math.inf:
+                threat_score += max(0.0, 9.0 - nearest_fire) * (2.0 + 0.6 * structure.priority)
+            if nearest_heat < math.inf:
+                threat_score += max(0.0, 7.0 - nearest_heat) * (1.0 + 0.4 * structure.priority)
+            structure_rank.append((threat_score, nearest_fire, structure))
+        structure_rank.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+        primary_structure = structure_rank[0][2]
+        primary_structure_fire_dist = structure_rank[0][1]
+        structure_by_id = {item[2].structure_id: item[2] for item in structure_rank}
+    else:
+        primary_structure = None
+        primary_structure_fire_dist = math.inf
+        structure_by_id = {}
+
+    fire_rank = []
+    for fire in obs.fire_details:
+        fire_score = float(fire.intensity) * 3.0
+        best_structure = None
+        best_structure_score = -1.0
+        best_structure_dist = math.inf
+        for structure in live_structures:
+            dist = _manhattan(fire.row, fire.col, structure.row, structure.col)
+            structure_score = max(0.0, 10.0 - dist) * (1.5 + 0.7 * structure.priority)
+            if structure.status.lower() == "burning":
+                structure_score += 6.0
+            if structure_score > best_structure_score:
+                best_structure_score = structure_score
+                best_structure = structure
+                best_structure_dist = dist
+        fire_score += max(0.0, best_structure_score)
+        fire_rank.append((fire_score, best_structure_dist, fire, best_structure))
+    fire_rank.sort(key=lambda item: (item[0], -item[1], item[2].intensity), reverse=True)
+
+    attack_targets = [
+        GridPoint(row=item[2].row, col=item[2].col)
+        for item in fire_rank[: max(1, min(3, len(fire_rank)))]
+    ]
+    primary_fire = fire_rank[0][2] if fire_rank else None
+    primary_fire_structure = fire_rank[0][3] if fire_rank else None
+
+    def _attack_target(index: int) -> GridPoint:
+        return attack_targets[index % len(attack_targets)]
+
+    assignments = []
+    attack_idx = 0
+    if primary_fire is None:
+        if primary_structure is None:
+            center = GridPoint(row=grid_max // 2, col=grid_max // 2)
+            return WildfireAction(assignments=[
+                ResourceAssignment(
+                    unit_id=unit.unit_id,
+                    mission_type="staging",
+                    target=TargetSpec(target_kind="point", point=center),
+                )
+                for unit in available_units
+            ])
+
+        stage_point = _staging_point_for_structure(primary_structure, grid_max)
+        for unit in available_units:
+            rtype = unit.resource_type
+            if rtype in {"engines", "crews", "dozers", "smokejumpers"}:
+                assignments.append(
+                    ResourceAssignment(
+                        unit_id=unit.unit_id,
+                        mission_type="staging",
+                        target=TargetSpec(target_kind="point", point=stage_point),
+                    )
+                )
+            elif rtype == "helicopters":
+                assignments.append(
+                    ResourceAssignment(
+                        unit_id=unit.unit_id,
+                        mission_type="point_protection",
+                        target=TargetSpec(target_kind="structure", structure_id=primary_structure.structure_id),
+                        commitment_steps=2,
+                    )
+                )
+            elif rtype == "airtankers":
+                assignments.append(
+                    ResourceAssignment(
+                        unit_id=unit.unit_id,
+                        mission_type="staging",
+                        target=TargetSpec(target_kind="point", point=stage_point),
+                    )
+                )
+        return WildfireAction(assignments=assignments)
+
+    threat_structure = primary_fire_structure or primary_structure
+    high_threat_structure = (
+        threat_structure is not None
+        and (
+            threat_structure.status.lower() == "burning"
+            or _manhattan(primary_fire.row, primary_fire.col, threat_structure.row, threat_structure.col) <= 4
+            or primary_structure_fire_dist <= 4
+        )
+    )
+
+    for unit in available_units:
+        rtype = unit.resource_type
+        if rtype in {"crews", "smokejumpers"}:
+            assignments.append(
+                ResourceAssignment(
+                    unit_id=unit.unit_id,
+                    mission_type="direct_attack",
+                    target=TargetSpec(target_kind="point", point=_attack_target(attack_idx)),
+                    commitment_steps=2 if high_threat_structure else 1,
+                )
+            )
+            attack_idx += 1
             continue
 
-        rtype = unit.resource_type
-        if rtype in ("crews", "engines", "smokejumpers"):
-            assignments.append(ResourceAssignment(
-                unit_id=unit.unit_id,
-                mission_type="direct_attack",
-                target=TargetSpec(target_kind="point", point=target_point),
-            ))
-        elif rtype == "helicopters":
-            assignments.append(ResourceAssignment(
-                unit_id=unit.unit_id,
-                mission_type="water_drop",
-                target=TargetSpec(target_kind="area", center=target_point, radius=1),
-                drop_configuration="salvo",
-            ))
-        elif rtype == "airtankers":
-            assignments.append(ResourceAssignment(
-                unit_id=unit.unit_id,
-                mission_type="retardant_drop",
-                target=TargetSpec(target_kind="area", center=target_point, radius=2),
-                drop_configuration="salvo",
-            ))
-        elif rtype == "dozers":
-            ahead_row = max(0, target_point.row - 3)
-            assignments.append(ResourceAssignment(
-                unit_id=unit.unit_id,
-                mission_type="line_construction",
-                target=TargetSpec(
-                    target_kind="line",
-                    waypoints=[
-                        GridPoint(row=ahead_row, col=max(0, target_point.col - 2)),
-                        GridPoint(row=ahead_row, col=min(grid_max, target_point.col + 2)),
-                    ],
-                ),
-            ))
+        if rtype == "engines":
+            if high_threat_structure and threat_structure is not None:
+                assignments.append(
+                    ResourceAssignment(
+                        unit_id=unit.unit_id,
+                        mission_type="point_protection",
+                        target=TargetSpec(target_kind="structure", structure_id=threat_structure.structure_id),
+                        commitment_steps=2,
+                    )
+                )
+            else:
+                assignments.append(
+                    ResourceAssignment(
+                        unit_id=unit.unit_id,
+                        mission_type="wet_line",
+                        target=TargetSpec(
+                            target_kind="line",
+                            waypoints=_build_line_between_fire_and_structure(
+                                threat_structure or primary_structure or list(structure_by_id.values())[0],
+                                primary_fire,
+                                grid_max,
+                                offset=1,
+                                half_span=2,
+                            ) if (threat_structure or primary_structure) is not None else [
+                                GridPoint(row=_clamp_cell(primary_fire.row - 1, grid_max), col=_clamp_cell(primary_fire.col - 2, grid_max)),
+                                GridPoint(row=_clamp_cell(primary_fire.row - 1, grid_max), col=_clamp_cell(primary_fire.col + 2, grid_max)),
+                            ],
+                        ),
+                    )
+                )
+            continue
+
+        if rtype == "helicopters":
+            area_center = (
+                _midpoint_target(primary_fire.row, primary_fire.col, threat_structure.row, threat_structure.col, grid_max)
+                if high_threat_structure and threat_structure is not None
+                else GridPoint(row=primary_fire.row, col=primary_fire.col)
+            )
+            assignments.append(
+                ResourceAssignment(
+                    unit_id=unit.unit_id,
+                    mission_type="water_drop",
+                    target=TargetSpec(target_kind="area", center=area_center, radius=1),
+                    drop_configuration="salvo",
+                )
+            )
+            continue
+
+        if rtype == "airtankers":
+            area_center = (
+                _midpoint_target(primary_fire.row, primary_fire.col, threat_structure.row, threat_structure.col, grid_max)
+                if threat_structure is not None
+                else GridPoint(row=primary_fire.row, col=primary_fire.col)
+            )
+            assignments.append(
+                ResourceAssignment(
+                    unit_id=unit.unit_id,
+                    mission_type="retardant_drop",
+                    target=TargetSpec(target_kind="area", center=area_center, radius=2),
+                    drop_configuration="trail" if high_threat_structure else "salvo",
+                )
+            )
+            continue
+
+        if rtype == "dozers":
+            if threat_structure is not None:
+                line = _build_line_between_fire_and_structure(
+                    threat_structure,
+                    primary_fire,
+                    grid_max,
+                    offset=2,
+                    half_span=3,
+                )
+            else:
+                line = [
+                    GridPoint(row=_clamp_cell(primary_fire.row - 2, grid_max), col=_clamp_cell(primary_fire.col - 3, grid_max)),
+                    GridPoint(row=_clamp_cell(primary_fire.row - 2, grid_max), col=_clamp_cell(primary_fire.col + 3, grid_max)),
+                ]
+            assignments.append(
+                ResourceAssignment(
+                    unit_id=unit.unit_id,
+                    mission_type="line_construction",
+                    target=TargetSpec(target_kind="line", waypoints=line),
+                    commitment_steps=2,
+                )
+            )
 
     return WildfireAction(assignments=assignments)
 
@@ -593,7 +810,7 @@ const CELL_COLORS = {0:"#3a7d44",1:"#ff4500",2:"#4a3728",3:"#e8c84a",
 const RES_COLORS  = {crews:"#3498db",engines:"#e74c3c",helicopters:"#00bcd4",
                      airtankers:"#ff9800",dozers:"#f1c40f",smokejumpers:"#8e44ad"};
 // GRID_N and CELL_SZ are derived from the first frame so the viewer adapts to
-// any grid size (easy/medium = 15×15, hard = 25×25).
+// any grid size (easy = 15×15, medium = 20×20, hard = 25×25).
 let CELL_SZ = 30, GRID_N = 15;
 let ws = null, svgEl, gridCells = [], unitDots = {};
 

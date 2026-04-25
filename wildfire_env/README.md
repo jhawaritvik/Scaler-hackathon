@@ -13,7 +13,7 @@ tags:
 
 # Wildfire Resource Allocation Environment
 
-An [OpenEnv](https://github.com/meta-pytorch/openenv)-compatible environment that simulates wildfire incident command on seeded terrain grids: `15×15` for easy and medium, and `25×25` for hard. An AI agent acts as an Incident Commander, dispatching real firefighting resources — hand crews, engines, helicopters, air tankers, dozers, and smokejumpers — to contain spreading fires and protect structures.
+An [OpenEnv](https://github.com/meta-pytorch/openenv)-compatible environment that simulates wildfire incident command on seeded terrain grids: `15×15` for easy, `20×20` for medium, and `25×25` for hard. An AI agent acts as an Incident Commander, dispatching real firefighting resources — hand crews, engines, helicopters, air tankers, dozers, and smokejumpers — to contain spreading fires and protect structures.
 
 Fire spread is driven by coupled terrain, fuel, moisture, weather, and fire-intensity physics grounded in published wildfire science (Rothermel 1972, Alexandridis et al. 2008, NWCG operational data). Tactics modelled include direct attack, wet lines, retardant drops, dozer firebreaks, and intentional backfires with anchor-point validation.
 
@@ -152,7 +152,7 @@ ignores it and only executes `assignments`.
 | `fleet_status` | list | Per-resource-type status counts |
 | `active_missions` | list | Non-available units with ETAs |
 | `resources_remaining` | dict | Available unit count per type |
-| `elevation` | list[list[int]] | `grid_size×grid_size` elevation map (15×15 on easy/medium, 25×25 on hard) |
+| `elevation` | list[list[int]] | `grid_size×grid_size` elevation map (15×15 easy, 20×20 medium, 25×25 hard) |
 | `fuel_types` | list[list[int]] | `grid_size×grid_size` fuel map (0=none, 1=grass, 2=brush, 3=forest) |
 | `last_action_summary` | str | What happened last step |
 | `last_action_error` | str\|None | Validation error, if any |
@@ -199,16 +199,16 @@ Each `FleetUnit` tracks: `status` (available / en_route / operating / returning)
 
 | | easy | medium | hard |
 |---|---|---|---|
-| Seed | 42 | 67 | 12 |
-| Ignitions | 1 at step 0 | 2 at step 0 + 1 at step 3 | 2 at step 0 + 1 at step 5 + 1 at step 6 |
-| Temperature | 26.3C | 27.6C | 38.8C |
-| Humidity | 51.9% | 43.7% | 35.6% |
-| Wind | 6.7 km/h | 19.0 km/h | 22.5 km/h |
-| Water bodies | 3 | 1 | 0 |
-| Structures | 3 x priority 1 | 2 x priority 1 + 2 x priority 2 | 2 x p1 + 1 x p2 + 1 x p3 |
-| Default seeded resources | 4c 4e 2h 1a 2d 1s | 2c 1e 2h 1a 2d 1s | 2c 1e 1h 1a 1d |
+| Seed | 7 | 6 | 9 |
+| Ignitions | 1 at step 0 + 1 at step 7 | 2 at step 0 + 1 at step 5 + 1 at step 6 | 2 at step 0 + 1 at step 4 |
+| Temperature | 29.4C | 32.5C | 38.1C |
+| Humidity | 42.5% | 30.2% | 38.5% |
+| Wind | 10.5 km/h | 19.2 km/h | 21.5 km/h |
+| Water bodies | 2 | 1 | 1 |
+| Structures | 4 x priority 1 | 1 x p1 + 3 x p2 | 2 x p1 + 2 x p2 |
+| Default seeded resources | 2c 1e 1h 1d | 3c 3e 2h 1d | 4c 2e 1h 1d |
 | Warmup before first observation | 0 steps | 0 steps | 2 steps (40 min) |
-| Max steps | 20 | 15 | 25 |
+| Max steps | 20 | 20 | 25 |
 
 **Grader formula (0.0–1.0):**
 - 60% — Structure protection: saved priority / total priority, weighted by structure priority values
@@ -287,9 +287,9 @@ curl http://localhost:8000/baseline
 
 | Task | Heuristic baseline |
 |------|--------------------|
-| easy | 0.3196 |
-| medium | 0.3549 |
-| hard | 0.0982 |
+| easy | 0.7697 |
+| medium | 0.6437 |
+| hard | 0.6246 |
 
 ---
 

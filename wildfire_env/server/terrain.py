@@ -1,7 +1,7 @@
 """
 Terrain Generator for Wildfire Simulation.
 
-Generates a configurable grid (default 15×15; hard difficulty uses 25×25) with:
+Generates a configurable grid (default 15×15; medium uses 20×20; hard uses 25×25) with:
   - elevation (0-9): height map using diamond-square-like noise
   - fuel_type (0-3): 0=none/rock, 1=grass, 2=brush, 3=forest
   - aspect (0-7): N,NE,E,SE,S,SW,W,NW — derived from elevation gradient
@@ -832,32 +832,32 @@ def generate_terrain(config: Optional[TerrainConfig] = None) -> Terrain:
 DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
     "easy": DifficultySpec(
         elevation_roughness=(0.2, 0.4),
-        num_water_bodies=(2, 3),
+        num_water_bodies=(1, 2),
         fuel_grass=(0.30, 0.45),
         fuel_brush=(0.25, 0.35),
-        fuel_forest=(0.10, 0.25),
-        temperature=(20.0, 28.0),
-        humidity=(0.45, 0.65),
-        wind_speed=(5.0, 12.0),
+        fuel_forest=(0.15, 0.30),
+        temperature=(22.0, 30.0),
+        humidity=(0.38, 0.55),
+        wind_speed=(8.0, 15.0),
         temp_amplitude=(5.0, 8.0),
         humidity_swing=(0.08, 0.12),
-        ignitions_step0=(1, 1),
-        delayed_ignitions=(0, 0),
-        num_structures=(2, 3),
+        ignitions_step0=(1, 2),
+        delayed_ignitions=(0, 1),
+        delayed_step_range=(5, 8),
+        num_structures=(3, 4),
         max_priority=1,
-        crews=(3, 5),
-        engines=(2, 4),
-        helicopters=(1, 2),
-        airtankers=(0, 1),
-        dozers=(1, 2),
-        smokejumpers=(0, 1),
-        num_ground_outposts=(2, 3),
+        crews=(2, 4),
+        engines=(1, 2),
+        helicopters=(1, 1),
+        airtankers=(0, 0),
+        dozers=(1, 1),
+        smokejumpers=(0, 0),
+        num_ground_outposts=(2, 2),
         num_air_bases=(1, 1),
         warmup_steps=(0, 0),
-        # Easy episodes must run at least 6 steps (2 sim-hours) so the agent
-        # cannot trivially suppress the single ignition and collect max score
-        # on step 1.  Prevents the easy-task score ceiling from dominating
-        # the curriculum signal.
+        # Easy teaches clean action formatting and basic prioritization on a
+        # 15x15 map. Engines trimmed to (1,2) so the heuristic cannot brute-force
+        # every ignition with overlapping wet lines on a small grid.
         min_steps_before_early_end=6,
     ),
     "medium": DifficultySpec(
@@ -865,19 +865,19 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         num_water_bodies=(1, 2),
         fuel_grass=(0.20, 0.35),
         fuel_brush=(0.30, 0.40),
-        fuel_forest=(0.20, 0.35),
-        temperature=(26.0, 34.0),
-        humidity=(0.30, 0.50),
-        wind_speed=(10.0, 20.0),
+        fuel_forest=(0.22, 0.38),
+        temperature=(27.0, 35.0),
+        humidity=(0.28, 0.45),
+        wind_speed=(12.0, 22.0),
         temp_amplitude=(8.0, 12.0),
         humidity_swing=(0.12, 0.20),
         ignitions_step0=(2, 2),
-        delayed_ignitions=(1, 1),
-        delayed_step_range=(3, 8),
-        num_structures=(3, 4),
+        delayed_ignitions=(1, 2),
+        delayed_step_range=(3, 7),
+        num_structures=(4, 6),
         max_priority=2,
-        crews=(2, 4),
-        engines=(1, 3),
+        crews=(3, 4),
+        engines=(2, 3),
         helicopters=(1, 2),
         airtankers=(0, 1),
         dozers=(1, 2),
@@ -885,10 +885,13 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         num_ground_outposts=(2, 3),
         num_air_bases=(1, 2),
         warmup_steps=(0, 0),
-        max_steps=15,
-        # Medium has a delayed re-ignition at steps 3-8, but the agent could
-        # still stall after quelling it.  Require at least 5 steps.
-        min_steps_before_early_end=5,
+        max_steps=20,
+        grid_size=20,
+        # Medium is the bridge tier: larger area than easy, multiple structures
+        # (up to 6 — heuristic can only optimally protect one primary), and
+        # cascading ignitions. Resources still adequate so good sequencing
+        # rather than attrition decides the score.
+        min_steps_before_early_end=6,
     ),
     "hard": DifficultySpec(
         elevation_roughness=(0.5, 0.8),
@@ -901,32 +904,37 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
         # heuristic 0.10). Pulled weather, ignition count, and resource
         # scarcity toward medium while keeping the grid (25×25), horizon,
         # priority-3 structures, and early delayed ignitions intact.
-        humidity=(0.25, 0.40),
-        wind_speed=(15.0, 25.0),
+        humidity=(0.27, 0.40),
+        wind_speed=(15.0, 24.0),
         temp_amplitude=(10.0, 15.0),
         humidity_swing=(0.18, 0.25),
         ignitions_step0=(2, 2),
-        delayed_ignitions=(1, 2),
+        delayed_ignitions=(2, 3),
         delayed_step_range=(3, 7),
-        num_structures=(3, 5),
+        num_structures=(4, 6),
         max_priority=3,
-        crews=(2, 3),
-        engines=(1, 2),
-        helicopters=(1, 1),
+        crews=(4, 5),
+        engines=(2, 3),
+        helicopters=(1, 2),
         airtankers=(0, 1),
-        dozers=(0, 1),
-        smokejumpers=(0, 0),
-        num_ground_outposts=(1, 2),
+        dozers=(1, 2),
+        smokejumpers=(0, 1),
+        num_ground_outposts=(2, 2),
         num_air_bases=(1, 1),
         warmup_steps=(2, 2),
-        # 25×25 grid (vs. 15×15 for easy/medium) — widens the strategic space,
+        # 25×25 grid (vs. 15×15 easy and 20×20 medium) — widens the strategic space,
         # gives the trained model clear headroom above the heuristic baseline,
         # and brings the episode area closer to real large-fire incidents.
         # 25 steps = ~8.3 sim-hours, long enough for multiple suppression phases.
         grid_size=25,
         max_steps=25,
-        # Hard already has cascading ignitions at steps 2-6; additional
-        # min-step guard not needed, but set to 3 to be consistent.
+        # Hard density: ~50 cells/unit (vs medium ~40), so still scarcer
+        # proportionally. Difficulty comes from concurrent complexity: 4-5 fire
+        # fronts (2 step-0 + 2-3 delayed), 4-6 mixed-priority structures, and
+        # fog-of-war forcing scout-then-act. The heuristic dispatches greedily
+        # per fire/structure; the trained model must pre-position units against
+        # the forecast, split coverage across high-priority structures, and
+        # commit dozers/smokejumpers to firebreaks ahead of spread.
         min_steps_before_early_end=3,
     ),
 }
@@ -935,9 +943,9 @@ DIFFICULTY_SPECS: dict[str, DifficultySpec] = {
 # inference script use these so that ``openenv validate`` and the hackathon
 # evaluator always see the same episodes.
 DEFAULT_SEEDS: dict[str, int] = {
-    "easy": 42,
-    "medium": 67,
-    "hard": 12,
+    "easy": 7,
+    "medium": 6,
+    "hard": 9,
 }
 
 

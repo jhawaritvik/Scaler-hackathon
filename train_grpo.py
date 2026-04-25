@@ -76,10 +76,14 @@ from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 class Config:
     model_name: str = "Qwen/Qwen3-4B-Instruct-2507"
     task_curriculum: tuple = (("easy", 0, 10), ("medium", 10, 25), ("hard", 25, 60))
+    # 16 hand-curated seeds per task, drawn from a 0-79 sweep and filtered
+    # to heuristic grader 0.2-0.85 (signal-rich; excludes dead-zone and
+    # trivial scenarios). Spread evenly across that range for diversity.
+    # Eval seeds (eval_policy.py:EVAL_TASKS) are fully held-out — no overlap.
     seeds_per_task: dict = field(default_factory=lambda: {
-        "easy":   [42, 100, 200, 300],
-        "medium": [67, 101, 201, 131],   # replaced 301 (dead-zone); 131 heuristic ≈ 0.38, aligned with pool
-        "hard":   [12, 102, 202, 302],
+        "easy":   [7, 8, 12, 22, 24, 27, 37, 43, 50, 54, 59, 63, 70, 71, 75, 80],
+        "medium": [2, 3, 4, 5, 10, 14, 20, 21, 27, 31, 36, 38, 41, 49, 60, 79],
+        "hard":   [1, 2, 8, 16, 21, 42, 44, 48, 52, 57, 60, 62, 70, 74, 79, 80],
     })
     group_size: int = 4
     seeds_per_iter: int = 2         # base seeds sampled per iter; group_size split across them
@@ -112,7 +116,7 @@ class Config:
 # module's HF_TOKEN check at import time)
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a terrain grid (easy/medium: 15×15, hard: 25×25).
+SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a terrain grid (easy: 15×15, medium: 20×20, hard: 25×25).
 
 Each step you receive a JSON observation and must respond with a JSON action.
 

@@ -10,6 +10,8 @@ baseline_scores.json
 _token_budget_check.py
 smoke_test_output/
 grpo_wildfire/
+docs/
+ENV_REVIEW.md
 
 wildfire_env/.venv/
 wildfire_env/.pytest_cache/

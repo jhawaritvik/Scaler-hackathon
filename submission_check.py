@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +23,11 @@ class CheckResult:
 
 
 SPACE_PATTERN = re.compile(r"https://huggingface\.co/spaces/[^\s)]+")
+NOTEBOOK_PATTERN = re.compile(r"wildfire_grpo_minimal_colab\.ipynb")
+PLOT_IMAGE_PATTERNS = {
+    "reward": re.compile(r"!\[[^\]]*\]\([^)]+training_reward_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
+    "loss": re.compile(r"!\[[^\]]*\]\([^)]+training_loss_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
+}
 
 
 def _read_text(path: Path) -> str:
@@ -56,6 +60,13 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
     )
     checks.append(
         CheckResult(
+            "README links the training notebook",
+            bool(NOTEBOOK_PATTERN.search(readme)),
+            "found" if NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_grpo_minimal_colab.ipynb from README.md",
+        )
+    )
+    checks.append(
+        CheckResult(
             "README links a writeup/video/slides",
             "to be linked after training completes" not in readme.lower(),
             "found" if "to be linked after training completes" not in readme.lower() else "replace the placeholder with a public URL",
@@ -68,11 +79,20 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
             "found" if "to be added after training completes" not in readme.lower() else "replace the placeholder with generated plots/results",
         )
     )
+    checks.append(
+        CheckResult(
+            "README embeds reward/loss plot images",
+            all(pattern.search(readme) for pattern in PLOT_IMAGE_PATTERNS.values()),
+            "found"
+            if all(pattern.search(readme) for pattern in PLOT_IMAGE_PATTERNS.values())
+            else "embed training_reward_curve.png and training_loss_curve.png inline in README.md",
+        )
+    )
 
     artifact_files = [
         ("Reward audit JSON", repo_root / "reward_audit.json"),
-        ("Training reward curve", artifacts_dir / "training_reward_curve.svg"),
-        ("Training loss curve", artifacts_dir / "training_loss_curve.svg"),
+        ("Training reward curve image", artifacts_dir / "training_reward_curve.png"),
+        ("Training loss curve image", artifacts_dir / "training_loss_curve.png"),
         ("Training summary", artifacts_dir / "training_summary.md"),
         ("Untrained eval JSON", artifacts_dir / "eval_untrained.json"),
         ("Trained eval JSON", artifacts_dir / "eval_trained.json"),

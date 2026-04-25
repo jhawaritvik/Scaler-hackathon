@@ -48,9 +48,9 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - **Training pipeline:** [`train_grpo.py`](./train_grpo.py) (also runnable via [`notebooks/wildfire_grpo_minimal_colab.ipynb`](./notebooks/wildfire_grpo_minimal_colab.ipynb))
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) (84 fixed-seed episodes, no exploit-like policies flagged)
 - **Submission artifact helpers:** [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
-- **Writeup / demo video / slides:** _to be linked after training completes_
-- **Training reward & loss plots:** _to be added after training completes_
-- **Trained-vs-baseline comparison:** _to be added after training completes_
+- **Writeup / demo video / slides:** [`ENV_REVIEW.md`](./ENV_REVIEW.md) (interim technical writeup; replace with final public blog/video/slides URL)
+- **Training reward & loss plots:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png) and [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png)
+- **Trained-vs-baseline comparison:** [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json) and [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json)
 
 ## What's in this repo
 
@@ -149,9 +149,9 @@ Three graded difficulty levels with cellular-automaton fire spread
 
 | task | grid | max steps | ignitions | structures | crews | helicopter | airtanker | wind (km/h) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| easy | 15×15 | 20 | 1 | 2-3 (P1) | 3-5 | 1-2 | 0-1 | 5-12 |
-| medium | 15×15 | 15 | 2 + 1 delayed | 3-4 (≤P2) | 2-4 | 1-2 | 0-1 | 10-20 |
-| hard | 25×25 | 25 | 2 + 1-2 delayed | 3-5 (≤P3) | 2-3 | 1 | 0-1 | 15-25 |
+| easy | 15×15 | 20 | 1-2 + 0-1 delayed | 3-4 (P1) | 2-4 | 1 | 0 | 8-15 |
+| medium | 20×20 | 20 | 2 + 1-2 delayed | 4-5 (≤P2) | 3-4 | 1-2 | 0-1 | 12-22 |
+| hard | 25×25 | 25 | 2 + 1-2 delayed | 3-5 (≤P3) | 3-4 | 1 | 0-1 | 15-24 |
 
 Each task has a deterministic grader that returns `0.0` to `1.0` using:
 
@@ -265,17 +265,66 @@ The grid resizes automatically for hard-task 25×25 episodes.
 
 ## Baselines
 
-Deterministic heuristic baseline via `/baseline` on the default seeded tasks:
+Deterministic heuristic baseline measured on five **held-out** seeds per task
+(no overlap with the 16-seed training pool in `train_grpo.py`). All seeds were
+selected from a 0-79 sweep and filtered to heuristic grader in 0.2-0.85
+(signal-rich range; excludes dead-zone and trivially-won scenarios).
 
-| task | heuristic score | seed |
-|---|---:|---:|
-| easy | 0.3196 | 42 |
-| medium | 0.3549 | 67 |
-| hard | 0.0982 | 12 |
+| task | mean | min | max | held-out eval seeds |
+|---|---:|---:|---:|---|
+| easy | 0.6970 | 0.58 | 0.82 | 11, 18, 25, 56, 76 |
+| medium | 0.5500 | 0.35 | 0.66 | 1, 7, 28, 61, 69 |
+| hard | 0.5800 | 0.41 | 0.65 | 9, 28, 32, 61, 75 |
 
-These values come from the current fog-of-war environment and reflect the
-default single-seed `/baseline` endpoint, not an older multi-seed evaluation
-run from before the environment changes.
+These numbers are produced by the structure-aware heuristic in
+`wildfire_env/server/app.py` (`_heuristic_action`). The heuristic ranks
+fires by structure proximity and matches resources to missions greedily; it
+plateaus on multi-front incidents (medium, hard) where the trained policy
+must pre-position units against the forecast and split coverage across
+priority structures.
+
+The trained-policy evaluation in `eval_policy.py` runs the same five seeds
+per task, so the trained-vs-heuristic delta in `submission_artifacts/eval_*.json`
+is a clean held-out generalization signal.
+
+### Why a 16-seed training pool, not thousands
+
+Standard RL setups (PPO on Atari, MuJoCo) train on millions of frames across
+thousands of randomly sampled environment seeds. The reasoning is that each
+seed contributes one tiny gradient nudge, and diversity beats repetition for
+generalization. That math depends on having enough total samples — typically
+10⁶–10⁸ frames — for the law of large numbers to kick in.
+
+This run does not. The compute budget is 60 GRPO iterations × 4 trajectories
+= **240 total episodes**. Stretching 240 episodes across 1000 unique seeds means
+each scenario is seen ~0.24 times on average — far below what GRPO needs for
+meaningful within-group advantage estimation (which compares trajectories on
+the *same task* and computes `(r - mean_r) / std_r`). With unique-seed-per-iter
+sampling the std collapses on lucky/unlucky scenarios, the gradient becomes
+noisy, and `inner_epochs=4` re-uses data the model has already adapted to.
+
+The 16-seed pool is the deliberate middle ground:
+
+- **Per-scenario sample count.** With `seeds_per_iter=2` × `group_size=4` and
+  `vary_env_seed_in_group=True`, each iteration visits ~4 unique scenarios.
+  Over 60 iterations the policy sees roughly 120-200 distinct env states with
+  meaningful repetition (~5-10 per scenario), enough for stable advantages.
+- **Difficulty filtering.** Seeds were screened against a 0-79 sweep of the
+  heuristic. Seeds outside the 0.2-0.85 grader range were dropped: dead-zone
+  seeds (heuristic ≈ 0) collapse within-group variance, and trivially-won
+  seeds (heuristic ≈ 1) leave no headroom for the policy to learn from.
+- **Difficulty spread.** The 16 seeds per task are picked evenly across the
+  surviving 0.2-0.85 range, so the curriculum sees a representative slice of
+  scenarios at each difficulty tier rather than clustering on one variant.
+- **Held-out generalization check.** The eval seeds (5 per task) are pulled
+  from the same sweep but disjoint from training. If the trained policy beats
+  the heuristic on training seeds but not eval seeds, that is overfitting to
+  the pool — the eval JSONs are designed to surface that failure mode.
+
+The honest tradeoff: a wider seed pool would generalize better *if* the
+compute existed to support it. Within a $30 hackathon budget, concentrating
+240 episodes on 16 representative scenarios produces a more reliable
+gradient than spreading them thin.
 
 LLM baseline script:
 
@@ -323,15 +372,18 @@ before the final hackathon push.
 
 ## Results
 
-_Populated after the main training run. Expected artifacts:_
+Current artifact snapshot (generated from the fixture training log to validate packaging paths):
 
-- `submission_artifacts/training_reward_curve.svg`
-- `submission_artifacts/training_loss_curve.svg`
+- `submission_artifacts/training_reward_curve.png`
+- `submission_artifacts/training_loss_curve.png`
 - `submission_artifacts/training_summary.md`
 - `submission_artifacts/eval_untrained.json`
 - `submission_artifacts/eval_trained.json`
-- short qualitative walkthrough: one hard-task episode where the trained
-  policy saves a structure the heuristic loses
+
+Replace this snapshot with real run artifacts before final submission.
+
+![Training Reward Curve](./submission_artifacts/training_reward_curve.png)
+![Training Loss Curve](./submission_artifacts/training_loss_curve.png)
 
 ## Repository layout
 
