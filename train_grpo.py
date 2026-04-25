@@ -456,25 +456,39 @@ def rollout_episode(
         prompt_ids_t = tokenizer(
             prompt_text, return_tensors="pt", add_special_tokens=False
         ).input_ids.to(device)
+        prompt_attn_t = torch.ones_like(prompt_ids_t, device=device)
         prompt_len = prompt_ids_t.shape[1]
 
         # New XGrammarLogitsProcessor instance required per generate() call.
         xgr_proc = XGrammarLogitsProcessor(compiled_grammar)
+        
         # Workaround: Unsloth 2026.3.11 has a Qwen3 RoPE shape bug in its
-        # inference-mode forward (fast_forward_inference). Setting train()
-        # forces the non-buggy training-mode path during generation.
-        model.train()
-        gen_out = model.generate(
+        # fast inference forward pass. Unsloth's custom generate() wrapper
+        # automatically forces the model into this buggy fast-inference mode.
+        # We bypass the wrapper and call the original transformers generate()
+        # directly, which uses the stable training-mode forward pass.
+        # We still call model.eval() to correctly disable LoRA dropout.
+        model.eval()
+        generate_fn = getattr(model, "_old_generate", None)
+        if generate_fn is None and hasattr(model, "base_model"):
+            generate_fn = getattr(model.base_model, "_old_generate", None)
+        if generate_fn is None:
+            generate_fn = model.generate
+            
+        gen_out = generate_fn(
             prompt_ids_t,
+            attention_mask=prompt_attn_t,
             max_new_tokens=config.max_new_tokens,
             temperature=config.rollout_temperature,
             top_p=config.rollout_top_p,
             top_k=config.rollout_top_k,
             do_sample=True,
+            use_cache=False,
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
-        model.eval()
+        model.train()  # restore for the GRPO update phase
+        
         completion_ids = gen_out[0, prompt_len:].tolist()
         comp_len = len(completion_ids)
         del gen_out  # free KV-cache storage held by the output tensor

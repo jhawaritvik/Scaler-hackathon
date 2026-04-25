@@ -160,20 +160,29 @@ def capture_llm(
         prompt_ids = tokenizer(
             prompt_text, return_tensors="pt", add_special_tokens=False,
         ).input_ids.to(device)
+        prompt_attn = torch.ones_like(prompt_ids, device=device)
 
         xgr_proc = XGrammarLogitsProcessor(compiled_grammar)
-        model.train()  # workaround: unsloth 2026.3.11 Qwen3 RoPE bug in inference path
-        gen_out = model.generate(
+        model.eval()
+        generate_fn = getattr(model, "_old_generate", None)
+        if generate_fn is None and hasattr(model, "base_model"):
+            generate_fn = getattr(model.base_model, "_old_generate", None)
+        if generate_fn is None:
+            generate_fn = model.generate
+
+        gen_out = generate_fn(
             prompt_ids,
+            attention_mask=prompt_attn,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_p=0.95,
             top_k=50,
             do_sample=True,
+            use_cache=False,
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
-        model.eval()
+        model.train()
         completion_ids = gen_out[0, prompt_ids.shape[1]:].tolist()
         raw_text = tokenizer.decode(completion_ids, skip_special_tokens=True)
         try:
