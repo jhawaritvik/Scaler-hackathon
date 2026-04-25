@@ -924,7 +924,11 @@ function renderFrame(data) {
     'Step ' + data.step + ' / ' + data.max_steps +
     '  |  Task: ' + data.task_id.toUpperCase();
   const act = data.last_action_summary || '';
-  document.getElementById('action-text').textContent = act.slice(0, 200);
+  const plan = data.model_plan || '';
+  // When a replay frame includes the model's plan field, show it inline
+  // before the env's action summary so viewers see the agent's reasoning.
+  const combined = plan ? ('PLAN: ' + plan + '  |  ' + act) : act;
+  document.getElementById('action-text').textContent = combined.slice(0, 280);
 
   if (data.done && data.score != null) {
     const pct = (data.score * 100).toFixed(1);
@@ -982,7 +986,16 @@ function startEpisode() {
   const task = document.getElementById('task-sel').value;
   const delay = document.getElementById('speed-sl').value;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = proto+'://'+location.host+'/demo?task_id='+task+'&delay_ms='+delay;
+  // ?replay=<path> switches the viewer from live heuristic streaming to
+  // replaying a JSON file captured by capture_replay.py.
+  const params = new URLSearchParams(location.search);
+  const replay = params.get('replay');
+  let url;
+  if (replay) {
+    url = proto+'://'+location.host+'/demo_replay?file='+encodeURIComponent(replay)+'&delay_ms='+delay;
+  } else {
+    url = proto+'://'+location.host+'/demo?task_id='+task+'&delay_ms='+delay;
+  }
   ws = new WebSocket(url);
   ws.onmessage = e => {
     try { renderFrame(JSON.parse(e.data)); } catch(ex) { console.error(ex); }
@@ -1096,16 +1109,107 @@ async def demo_stream(
             pass
 
 
+_REPLAY_SEARCH_DIRS = ("submission_artifacts", "replays", "artifacts")
+
+
+def _resolve_replay_path(file_arg: str) -> str | None:
+    """Resolve a replay-file query string to an absolute path on disk.
+
+    Tries (in order):
+      1. as-given (relative to cwd or absolute)
+      2. each entry in _REPLAY_SEARCH_DIRS
+
+    Returns None if no resolution exists or the resolved path escapes the
+    cwd (basic path-traversal guard — replays are static JSON, but the
+    endpoint is publicly reachable on a deployed Space).
+    """
+    import os as _os
+    cwd = _os.path.abspath(_os.getcwd())
+    candidates = [file_arg] + [_os.path.join(d, file_arg) for d in _REPLAY_SEARCH_DIRS]
+    for cand in candidates:
+        full = _os.path.abspath(cand)
+        if not full.startswith(cwd):
+            continue
+        if _os.path.isfile(full):
+            return full
+    return None
+
+
+@app.websocket("/demo_replay")
+async def demo_replay(
+    websocket: WebSocket,
+    file: str,
+    delay_ms: int = 700,
+) -> None:
+    """Stream a previously-captured episode JSON for visualization.
+
+    Captured by ``capture_replay.py`` — see that script for usage. The frame
+    schema is identical to /demo so the viewer renders without changes.
+
+    Query params:
+      file      — relative path to the captured frames JSON
+      delay_ms  — milliseconds between frames (default: 700)
+    """
+    import json as _json
+    await websocket.accept()
+    try:
+        full_path = _resolve_replay_path(file)
+        if full_path is None:
+            await websocket.send_json({"error": f"replay file not found: {file}"})
+            return
+        with open(full_path, "r", encoding="utf-8") as fh:
+            payload = _json.load(fh)
+        frames = payload.get("frames", [])
+        if not frames:
+            await websocket.send_json({"error": "replay payload contains no frames"})
+            return
+        for idx, frame in enumerate(frames):
+            await websocket.send_json(frame)
+            if frame.get("done"):
+                break
+            if idx + 1 < len(frames):
+                await asyncio.sleep(delay_ms / 1000.0)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        try:
+            await websocket.send_json({"error": str(exc)})
+        except Exception:
+            pass
+
+
+@app.get("/replays")
+async def list_replays() -> dict:
+    """Index any captured-episode JSONs reachable under the search dirs.
+
+    Helpful for the demo video workflow: lets you confirm a replay file
+    is visible to the server before opening /viewer?replay=...
+    """
+    import os as _os
+    found: list[dict] = []
+    cwd = _os.path.abspath(_os.getcwd())
+    for d in _REPLAY_SEARCH_DIRS:
+        dir_path = _os.path.join(cwd, d)
+        if not _os.path.isdir(dir_path):
+            continue
+        for name in sorted(_os.listdir(dir_path)):
+            if name.endswith(".json"):
+                rel = _os.path.relpath(_os.path.join(dir_path, name), cwd).replace(_os.sep, "/")
+                found.append({"file": rel, "size": _os.path.getsize(_os.path.join(dir_path, name))})
+    return {"replays": found, "search_dirs": list(_REPLAY_SEARCH_DIRS)}
+
+
 @app.get("/viewer", response_class=HTMLResponse)
 async def viewer() -> HTMLResponse:
     """Serve the live incident-command viewer.
 
     Open in a browser while the server is running:
-        http://localhost:8000/viewer
+        http://localhost:8000/viewer                           (live heuristic)
+        http://localhost:8000/viewer?replay=replays/foo.json   (captured replay)
 
-    The page connects automatically to /demo and replays a heuristic-agent
-    episode with an animated grid, weather panel, and spot-forecast display.
-    Task and playback speed are adjustable without reloading.
+    The page connects to /demo (live heuristic) by default. When a
+    ?replay=<path> query param is present, it streams via /demo_replay
+    instead, replaying a JSON captured by capture_replay.py.
     """
     return HTMLResponse(content=_VIEWER_HTML)
 

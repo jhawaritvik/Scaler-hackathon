@@ -255,13 +255,33 @@ docker run -p 8000:8000 wildfire-env
 
 ### Live viewer
 
-A websocket-streaming demo at `/demo` renders episodes in real time:
+A websocket-streaming demo at `/viewer` renders episodes in real time —
+animated grid, structure priority labels, unit movement dots, wind compass,
+2-step weather forecast, and a per-step action summary. The grid resizes
+automatically for the 20×20 medium and 25×25 hard tasks.
 
 ```
-http://localhost:8000/demo
+http://localhost:8000/viewer                            # live heuristic stream
+http://localhost:8000/viewer?replay=replays/foo.json    # replay a captured episode
 ```
 
-The grid resizes automatically for hard-task 25×25 episodes.
+For the submission demo video, use `capture_replay.py` to record a single
+trained-policy episode (or heuristic baseline on the same seed for side-by-side
+comparison):
+
+```bash
+# Trained LLM (GPU required) — captures the model's plan field per step too
+python capture_replay.py --task hard --seed 9 --policy llm \
+    --adapter grpo_wildfire/best_adapter_hard \
+    --output replays/trained_hard_9.json
+
+# Heuristic baseline on the same seed (no GPU)
+python capture_replay.py --task hard --seed 9 --policy heuristic \
+    --output replays/heuristic_hard_9.json
+```
+
+`GET /replays` returns an index of every JSON visible to the server under
+`replays/`, `submission_artifacts/`, or `artifacts/`.
 
 ## Baselines
 
