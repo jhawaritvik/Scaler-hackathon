@@ -2,7 +2,7 @@
 
 The implementation lives in :mod:`eval_policy_http` (WebSocket session + grader).
 This module exists so older docs and
-``notebooks/wildfire_training_eval_hf.ipynb`` (Cell 5) can run ``eval_policy.py``
+``notebooks/wildfire_eval_plots_hf.ipynb`` can run ``eval_policy.py`` via subprocess
 unchanged.
 """
 

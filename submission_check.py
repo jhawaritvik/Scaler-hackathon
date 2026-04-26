@@ -23,8 +23,8 @@ class CheckResult:
 
 
 SPACE_PATTERN = re.compile(r"https://huggingface\.co/spaces/[^\s)]+")
-TRAINING_NOTEBOOK_PATTERN = re.compile(r"wildfire_training_eval_hf\.ipynb")
-EVAL_NOTEBOOK_PATTERN = re.compile(r"wildfire_http_eval_hf\.ipynb")
+TRAINING_NOTEBOOK_PATTERN = re.compile(r"wildfire_grpo_train_hf\.ipynb")
+EVAL_NOTEBOOK_PATTERN = re.compile(r"wildfire_eval_plots_hf\.ipynb")
 PLOT_IMAGE_PATTERNS = {
     "reward": re.compile(r"!\[[^\]]*\]\([^)]+training_reward_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
     "loss": re.compile(r"!\[[^\]]*\]\([^)]+training_loss_curve\.(png|jpg|jpeg)\)", re.IGNORECASE),
@@ -44,8 +44,8 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
         ("OpenEnv showcase evaluation script", repo_root / "eval_policy_http.py"),
         ("Reward audit", repo_root / "reward_audit.py"),
         ("Separate Blog.MD writeup", repo_root / "Blog.MD"),
-        ("HF training notebook", repo_root / "notebooks" / "wildfire_training_eval_hf.ipynb"),
-        ("HF OpenEnv eval notebook", repo_root / "notebooks" / "wildfire_http_eval_hf.ipynb"),
+        ("HF training notebook (GRPO only)", repo_root / "notebooks" / "wildfire_grpo_train_hf.ipynb"),
+        ("HF eval + plots notebook", repo_root / "notebooks" / "wildfire_eval_plots_hf.ipynb"),
     ]
 
     checks = [
@@ -64,14 +64,14 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
         CheckResult(
             "README links the training notebook",
             bool(TRAINING_NOTEBOOK_PATTERN.search(readme)),
-            "found" if TRAINING_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_training_eval_hf.ipynb from README.md",
+            "found" if TRAINING_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_grpo_train_hf.ipynb from README.md",
         )
     )
     checks.append(
         CheckResult(
-            "README links the OpenEnv eval notebook",
+            "README links the eval + plots notebook",
             bool(EVAL_NOTEBOOK_PATTERN.search(readme)),
-            "found" if EVAL_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_http_eval_hf.ipynb from README.md",
+            "found" if EVAL_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_eval_plots_hf.ipynb from README.md",
         )
     )
     checks.append(

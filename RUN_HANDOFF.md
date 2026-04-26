@@ -19,14 +19,15 @@ Submit the Wildfire OpenEnv hackathon project before the deadline with:
 `eval_policy_http.py` (legacy filename, now WebSocket-based) is the single
 evaluator. The filename is preserved so README/notebook/`submission_check.py`
 references keep working. A thin `eval_policy.py` forwards to it for
-[`wildfire_training_eval_hf.ipynb`](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb) Cell 5.
+[`wildfire_eval_plots_hf.ipynb`](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_eval_plots_hf.ipynb) (subprocess to `eval_policy_http.py`).
 
 **Canonical training path:** the Space and local
-`notebooks/wildfire_training_eval_hf.ipynb` should match — **four code cells**,
+`notebooks/wildfire_grpo_train_hf.ipynb` should match — **four code cells**,
 **Cell 4** = full **20-iter** `deadline_v2_a10g` (see inline `Config` in the
-notebook). `python train_grpo.py` alone is still the **60-iter** default. README
-and `Blog.MD` describe the notebook path. The long block below is extra
-**historical** context from mid-run.
+notebook). **Eval, training-curve plots, and submission artifacts** live only in
+`notebooks/wildfire_eval_plots_hf.ipynb`. `python train_grpo.py` alone is still
+the **60-iter** default. README and `Blog.MD` describe the notebook paths. The
+long block below is extra **historical** context from mid-run.
 
 ## Live Space
 
@@ -67,8 +68,8 @@ Committed and pushed:
 This commit:
 
 - added `eval_policy_http.py`
-- added `notebooks/wildfire_http_eval_hf.ipynb`
-- made `notebooks/wildfire_training_eval_hf.ipynb` training-only
+- added `notebooks/wildfire_eval_plots_hf.ipynb`
+- made `notebooks/wildfire_grpo_train_hf.ipynb` training-only
 - removed old direct `eval_policy.py`
 - removed `record_qwen_run.py`
 - removed old Kaggle notebook
