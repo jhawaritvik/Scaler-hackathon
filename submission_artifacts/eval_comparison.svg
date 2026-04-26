@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" font-family="Arial, sans-serif">
+<rect width="960" height="520" fill="white"/>
+<text x="480.0" y="34" text-anchor="middle" font-size="20" fill="#282828">Trained vs untrained — held-out OpenEnv eval (5 seeds/task)</text>
+<line x1="80" y1="450.0" x2="920" y2="450.0" stroke="#dcdcdc" stroke-width="1"/>
+<text x="72" y="454.0" text-anchor="end" font-size="12" fill="#282828">0.0</text>
+<line x1="80" y1="374.0" x2="920" y2="374.0" stroke="#dcdcdc" stroke-width="1"/>
+<text x="72" y="378.0" text-anchor="end" font-size="12" fill="#282828">0.2</text>
+<line x1="80" y1="298.0" x2="920" y2="298.0" stroke="#dcdcdc" stroke-width="1"/>
+<text x="72" y="302.0" text-anchor="end" font-size="12" fill="#282828">0.4</text>
+<line x1="80" y1="222.0" x2="920" y2="222.0" stroke="#dcdcdc" stroke-width="1"/>
+<text x="72" y="226.0" text-anchor="end" font-size="12" fill="#282828">0.6</text>
+<line x1="80" y1="146.0" x2="920" y2="146.0" stroke="#dcdcdc" stroke-width="1"/>
+<text x="72" y="150.0" text-anchor="end" font-size="12" fill="#282828">0.8</text>
+<line x1="80" y1="70.0" x2="920" y2="70.0" stroke="#dcdcdc" stroke-width="1"/>
+<text x="72" y="74.0" text-anchor="end" font-size="12" fill="#282828">1.0</text>
+<line x1="80" y1="70" x2="80" y2="450" stroke="#3c3c3c" stroke-width="2"/>
+<line x1="80" y1="450" x2="920" y2="450" stroke="#3c3c3c" stroke-width="2"/>
+<text x="22" y="260.0" text-anchor="middle" font-size="14" fill="#282828" transform="rotate(-90 22 260.0)">Grader score (0–1)</text>
+<rect x="103.1" y="177.6" width="75.6" height="272.4" fill="#aaaaaa" stroke="#5a5a5a" stroke-width="1"/>
+<text x="140.9" y="171.6" text-anchor="middle" font-size="12" fill="#282828">0.717</text>
+<rect x="191.3" y="145.1" width="75.6" height="304.9" fill="#d94a3d" stroke="#7a1f17" stroke-width="1"/>
+<text x="229.1" y="139.1" text-anchor="middle" font-size="12" fill="#282828">0.802</text>
+<text x="185.0" y="119.1" text-anchor="middle" font-size="13" font-weight="bold" fill="#1b7a35">Δ +0.086</text>
+<text x="185.0" y="474" text-anchor="middle" font-size="14" fill="#282828">easy</text>
+<rect x="313.1" y="307.6" width="75.6" height="142.4" fill="#aaaaaa" stroke="#5a5a5a" stroke-width="1"/>
+<text x="350.9" y="301.6" text-anchor="middle" font-size="12" fill="#282828">0.375</text>
+<rect x="401.3" y="305.4" width="75.6" height="144.6" fill="#d94a3d" stroke="#7a1f17" stroke-width="1"/>
+<text x="439.1" y="299.4" text-anchor="middle" font-size="12" fill="#282828">0.381</text>
+<text x="395.0" y="279.4" text-anchor="middle" font-size="13" font-weight="bold" fill="#1b7a35">Δ +0.006</text>
+<text x="395.0" y="474" text-anchor="middle" font-size="14" fill="#282828">medium</text>
+<rect x="523.1" y="313.1" width="75.6" height="136.9" fill="#aaaaaa" stroke="#5a5a5a" stroke-width="1"/>
+<text x="560.9" y="307.1" text-anchor="middle" font-size="12" fill="#282828">0.360</text>
+<rect x="611.3" y="293.9" width="75.6" height="156.1" fill="#d94a3d" stroke="#7a1f17" stroke-width="1"/>
+<text x="649.1" y="287.9" text-anchor="middle" font-size="12" fill="#282828">0.411</text>
+<text x="605.0" y="267.9" text-anchor="middle" font-size="13" font-weight="bold" fill="#1b7a35">Δ +0.051</text>
+<text x="605.0" y="474" text-anchor="middle" font-size="14" fill="#282828">hard</text>
+<rect x="733.1" y="266.1" width="75.6" height="183.9" fill="#aaaaaa" stroke="#5a5a5a" stroke-width="1"/>
+<text x="770.9" y="260.1" text-anchor="middle" font-size="12" fill="#282828">0.484</text>
+<rect x="821.3" y="248.1" width="75.6" height="201.9" fill="#d94a3d" stroke="#7a1f17" stroke-width="1"/>
+<text x="859.1" y="242.1" text-anchor="middle" font-size="12" fill="#282828">0.531</text>
+<text x="815.0" y="222.1" text-anchor="middle" font-size="13" font-weight="bold" fill="#1b7a35">Δ +0.047</text>
+<text x="815.0" y="474" text-anchor="middle" font-size="14" fill="#282828">overall</text>
+<rect x="80" y="492" width="14" height="14" fill="#aaaaaa" stroke="#5a5a5a"/>
+<text x="102" y="503" font-size="14" fill="#282828">Untrained (zero-shot Qwen3-4B)</text>
+<rect x="320" y="492" width="14" height="14" fill="#d94a3d" stroke="#7a1f17"/>
+<text x="342" y="503" font-size="14" fill="#282828">Trained (GRPO LoRA, iter 17)</text>
+</svg>

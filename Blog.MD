@@ -1,260 +1,79 @@
-# An Environment to Save the Environment
+# Building an RL Environment for the Benefit of the Environment
 
-I started this project with a small thought:
+When I first sat down to think about what RL environment to build, I got the usual suggestions everyone gets. Supply and demand simulators. Coding agents. Inventory management. Trading bots. The kind of stuff that shows up on every "RL project ideas" list.
 
-What if an AI agent could practice making decisions in a wildfire before those decisions ever mattered in the real world?
+None of it felt right. They were all the same well-trodden ground. Useful, sure, but I wanted to aim a bit more ambitiously. If I was going to spend weeks on this, I wanted the thing the agent learns to do to actually matter.
 
-That sentence slowly became the heart of the project:
+So I flipped the question. Instead of asking "what is a clean RL problem", I asked "what is a real problem worth solving where RL might help".
 
-**An environment to save the environment.**
+That gave me a tagline I kept coming back to. An RL environment for the benefit of the environment.
 
-At first, I thought I was simply building a wildfire simulator. Make a grid, add trees, start a fire, give the agent water drops and fire crews, and see if it can stop the spread. It sounded clean and manageable.
+Once I had that framing, wildfires were the obvious pick. They are getting worse every year, the dispatch problem is genuinely hard, and the underlying physics is rich enough to be interesting without being so chaotic that learning is hopeless. A real problem with real impact.
 
-The first version even looked convincing. There was a map. There was fire. There were actions. The agent could send resources and the fire would react.
+The first version I asked Claude to build was quick. Maybe too quick. What came back was a grid where cells caught fire if their neighbors were on fire, with a wind variable you could nudge to change the spread probability. It worked. It even looked like fire if you squinted at the renders. But it was the cartoon version of a wildfire. The kind of thing where you draw flames as orange triangles.
 
-But when I sat with it for a while, something felt wrong.
+The problem was not that it was wrong. The problem was that it was flat. There were no underlying dynamics for an agent to discover. No reason for the model to learn that this fire on this slope at this time of day was different from one a few cells over. Every fire was basically the same fire. That is not an environment, that is a screensaver.
 
-It was not really a wildfire. It was a puzzle wearing wildfire clothes.
+The example that kept rattling around in my head was this loop. A forest catches fire. The air above it heats up. Hot air rises. That creates a low pressure pocket. Surrounding wind rushes in toward the fire. The fire gets more oxygen. It grows bigger. Which heats more air. And so on.
 
-The fire spread because I told it to spread. The resources worked because I told them to work. The agent was not learning to survive a changing situation. It was learning my script.
+That is a firestorm. And the important part is that nobody coded it as a rule. It just falls out when you model the base variables honestly. That was the kind of texture I wanted in my environment. Things that were not scripted but that emerged on their own when the underlying physics was right.
 
-That bothered me, because wildfire is the opposite of scripted.
+Now, modelling every such phenomenon explicitly is impossible. Fire science is its own field with its own PhDs. So I made a call. Instead of trying to model the phenomena, I would model the base variables honestly and let the phenomena emerge.
 
-Wildfire is messy. Wind changes. Moisture drops. Heat builds. Fire moves uphill faster. A crew can be busy when you suddenly need it somewhere else. A structure that looked safe ten minutes ago can become the most important thing on the map.
+I sat down with the codebase and started layering things in. Wind speed and direction, not just a scalar but a vector with its own daily cycle and random drift. Direction in the convention real fire models use, where it points to where the wind is coming from. Humidity tied inversely to the daily cycle, so things dry out during peak heat the way they actually do. Temperature with a base value plus a daily swing that peaks around 70 percent through the episode. Fuel moisture per cell, drifting toward equilibrium at fuel-class-specific time constants of 1 hour for grass and 10 hours for brush and forest. This is the Rothermel time-lag model from the 1972 paper.
 
-The more I thought about it, the more I realized that the environment should not be a list of hand-written wildfire events. It should be a world with enough basic pieces that interesting behavior can happen on its own.
+I added elevation and slope, with heat transfer multiplied by an exponential of the slope angle, so cells uphill from a fire receive 2 to 3 times more heat than downhill neighbors. This is why uphill runs are so dangerous in real life. I added aspect, where north-facing slopes get different temperatures and different drying multipliers than south-facing ones, so south faces stay dry all day while north faces recover overnight. I added fuel types, grass and brush and forest, with different burn durations of 2, 4, and 6 ticks and different moisture extinction polynomials.
 
-So I changed direction.
+Then I asked AI to dig up the actual research on how these variables interact and wired the formulas in with real coefficients. The Alexandridis 2008 formulation gives wind-directional spread anisotropy, which is what creates the elliptical fire perimeters pointing downwind that you see in real fire maps. The Rothermel moisture damping polynomial is non-linear, so a small moisture change near the extinction point flips a fire from uncontrollable to stoppable. Spotting, where embers fly ahead of the main fire and start new ignitions, kicks in only when wind is above 28.8 km per hour and intensity is above 3.0.
 
-Instead of scripting "wildfire behavior", I started modeling the ingredients behind it: fuel, elevation, slope, water, moisture, temperature, humidity, wind, heat, intensity, structures, and resource travel time. I wanted the agent to feel pressure from the world, not just from a scoring rule.
+The piece I am most proud of is the airflow potential field. It is a hidden scalar field that burning intensity feeds into. It diffuses and decays each step. The gradient of that field perturbs the local wind by up to plus or minus 4 km per hour. I never coded a firestorm rule. But because intense fires now generate their own pressure gradient that pulls wind toward them, the firestorm loop emerges from the physics. Big fires literally accelerate their own spread by inducing a draft. The exact phenomenon I had been imagining at the start, falling out of the model on its own.
 
-That is where the project became real for me.
+That was the moment the environment stopped being a screensaver.
 
-## The Moment It Clicked
+Once the fire side was honest, the firefighting side had to match. A high-fidelity fire model paired with a cartoon dispatch model would be useless. The agent would just learn to abuse the cheap abstractions. So I went back through NWCG doctrine and modelled six resource classes, each with realistic preparation times, travel speeds, and return-to-base overheads.
 
-There was one simple science idea that stuck in my head: fire heats the air, hot air rises, pressure changes around the fire, and wind can be pulled toward the burn area. That can make the fire worse.
+Hand crews are 20-person Type 2 ground crews with hand tools. They take 10 minutes to prep, 2.5 minutes per cell to travel, and 15 minutes to return. Wildland engines are Type 3 to 6 pumpers with foam, faster to deploy and faster to return. Helicopters carry water in a Bambi bucket of 300 to 700 gallons, take 5 minutes to prep and only 0.6 minutes per cell of travel, and they have smart routing that scoops from the nearest lake instead of base if the lake is closer. Air tankers are large fixed-wing planes carrying 2000 to 4000 gallons of retardant, with a long 30 minute return time so each drop is precious. Dozers are slow to roll out at 15 minutes prep but their lines are permanent firebreaks, and their production rate depends on the fuel type they are cutting through. Smokejumpers are the fastest to deploy at 2 minutes prep with a 0.3 minute jump, but they need an extraction helicopter to come pick them up, so they pay a 15 minute extraction overhead on the way back.
 
-It is such a small loop, but it changed how I looked at the project.
+The point of all this granularity is not realism for its own sake. It is that the agent has to learn trade-offs that mirror real incident command decisions. Smokejumpers are fastest in but slowest out. Air tankers are devastating but each drop is expensive and slow to reload. Dozers are slow to start but their lines pay off if you commit early. Helicopters near water get free reloads, so positioning matters.
 
-If even one part of wildfire had that kind of feedback, then how many other loops was I missing? Wind affects fire. Fire affects heat. Heat affects nearby cells. Moisture changes over time. Terrain changes spread. Delayed ignitions change the plan. Resources take time to move and come back.
+Each suppression action has a different mechanical effect too. Wet line saturates fuel moisture to 0.90 for a few steps until the moisture drifts back toward equilibrium. Retardant deposits a persistent ignition threshold bonus capped at plus 0.40 that decays at 0.008 per step normally and 0.010 per step per adjacent burning cell, calibrated against the USDA effectiveness window of 4 to 5 hours for Phos-Chek LC-95. That is the level of grounding I wanted. Every constant in the file should be defensible against a published source.
 
-I could not script all of that one by one.
+The reward function took more iterations than the physics. The physics has the courtesy of being grounded in equations. The reward function is just you, alone, trying to anticipate every way your agent will cheat you. And it will cheat you, every single time.
 
-So the goal became different: build a place where those pressures can exist together, and let the agent deal with the consequences.
+The first version was naive. Plus one for every cell saved, minus one for every cell burned. Sounds reasonable. The agent immediately learned it could do nothing on small fires that would burn out on their own and still rack up positive reward from the unburned cells around them. Passive reward farming.
 
-## What the Agent Is Really Doing
+So I added an active fire pressure penalty of minus 0.005 per burning cell. Now the agent had urgency. But on the hard 25 by 25 grid that uniform negative signal drowned out everything else. The agent learned that the optimal policy was to give up early and minimize regret. So I added a grid-size normalization factor that scales penalties down on bigger maps, so the positive learning signal does not get buried.
 
-The agent is not just putting water on red squares.
+Then I caught the agent doing the reverse. It would dispatch a single hand crew to nibble at the edge of a fire that was about to self-extinguish anyway and claim credit for containment. So I gated the containment bonus. It only fires if the agent actually suppressed something on that tick. You do not get credit for the fire going out unless you helped put it out.
 
-It is acting like an incident commander.
+Here is where I landed.
 
-Every episode starts as a seeded wildfire incident. Easy tasks use a `15x15` grid, medium uses `20x20`, and hard uses `25x25`. The map has terrain, fuel, water, structures, ignition points, delayed ignitions, and weather.
+For the per-step environmental signals, a burning structure gives minus 0.12 times its priority each step it stays on fire, as ongoing urgency. A structure lost gives a one-time minus 0.50 times priority when it transitions from burning to fully burned, tracked in a set so it cannot fire twice. A structure that is safe and under threat gives a small plus 0.003 times priority each step. Cells suppressed give plus 0.06 each, a strong immediate signal for transitioning a cell from burning to suppressed. Containment gives plus 0.018 per net burning cell reduced, gated on the agent having suppressed something. Cells protected give plus 0.0025 each, capped at 12 cells so it does not get trivialized. Active fire pressure gives minus 0.005 per burning cell, capped at 8 cells so it does not dominate the gradient. Fire fully extinguished gives a one-time terminal bonus that scales from plus 0.30 if it took a long time to plus 0.70 if it was instant.
 
-The agent gets observations over time. It sees burning cells, heat warnings, structure priorities, weather, short forecasts, available units, active missions, and return times. It also gets an `action_guide` in normal language so it knows what resources are available and what they can do.
+Then there are the action costs, applied separately. Direct attack costs minus 0.0022. Line construction costs minus 0.0037. Wet line costs minus 0.0030. Water drop costs minus 0.0060. Retardant drop costs minus 0.0090, the most expensive of the suppression types because air tankers should be reserved for the cases that need them. Backfire costs minus 0.0112, the highest, because it is a powerful but dangerous tool. There is a per-resource dispatch surcharge between minus 0.0004 and minus 0.0030 depending on the platform. Invalid actions cost minus 0.05. And if units are sitting available with no work, an idle penalty of minus 0.005 per available unit kicks in, capped at minus 0.02.
 
-But it does not get a perfect world.
+The principles I converged on were these.
 
-There is fog of war. The agent may know a fire exists, but it may not know every detail unless resources are positioned to observe the area. That one choice made the environment feel much more alive to me. Suddenly, scouting mattered. Staging mattered. Not knowing mattered.
+Reward transitions, not states. A burning structure is bad, but the moment it becomes fully burned is when the big penalty fires. This makes the gradient cleaner. The agent learns what action prevented the bad outcome, not just that some state is bad.
 
-The agent has to make decisions like:
+Weather is information, not penalty. I never penalize the agent for high winds. Weather is something it observes and conditions on, not something it gets blamed for. Penalizing weather would teach the agent learned helplessness.
 
-- Do I protect the closest structure or the highest-priority one?
-- Do I attack the active fire or build a line ahead of it?
-- Do I send the helicopter now or save it for a worse front later?
-- Do I move a unit closer before I need it?
-- Is this ground crew assignment useful but unsafe?
+One-time bonuses for one-time events. Fire extinguished, structure lost, these fire exactly once via tracking sets. No double counting.
 
-Those are the kinds of questions I wanted the environment to create.
+Cap penalties to keep the gradient signal alive. The fire pressure penalty is capped at 8 cells. The protected bonus at 12. Without caps, on a hard map, one term dominates and the others become invisible.
 
-## The Resources Are Not Magic
+Gate positive signals on agent contribution. The containment bonus only triggers if the agent suppressed something this tick. No credit for nature taking its course.
 
-The agent controls hand crews, engines, helicopters, air tankers, dozers, and smokejumpers.
+Building this was less about reinforcement learning and more about honest modelling of a complex system. The RL part is almost incidental. Give a competent algorithm an honest environment and it will find policies. Give it a dishonest one and it will find exploits.
 
-I tried to make them feel limited.
+The biggest shift in how I think now is this. Do not try to script the interesting behavior. Model the substrate honestly and let the interesting behavior emerge. I never wrote a firestorm rule. I wrote a buoyancy field with realistic decay and diffusion constants, and firestorms appeared. I never wrote a rule that fires spread faster uphill. I wrote a slope coefficient and an elevation grid, and uphill runs emerged.
 
-A helicopter can move fast, but it still has refill and return behavior. An air tanker can cover more area, but it takes longer to come back. A dozer can build a strong firebreak, but it is not instant. Smokejumpers can deploy quickly, but they are scarce. Ground crews can do a lot, but they can also be sent into unsafe places.
+That is the bar I want to hold future environments to. If the only way an interesting phenomenon shows up is because I hard-coded it, the model is not deep enough yet. Find the underlying variables. Wire them up honestly. Let the emergence do the work.
 
-That last part mattered to me. In a real wildfire, "effective" and "safe" are not always the same thing. So the environment includes an LCES-inspired safety check. If a ground unit is sent too close to active fire without a reachable escape or safety zone, the agent is penalized.
+And if the agent ends up learning to position fires near lakes for free helicopter reloads, that is not a bug. That is the environment doing its job.
 
-This is where the environment starts to become more than a game. The best action is not always the action with the biggest immediate effect.
+A note on where this fits in the hackathon themes. The environment lands most naturally under Theme 3.1, World Modeling for Professional Tasks. The theme description talks about environments that require real interaction with dynamic systems, where the model is expected to do real hard work instead of exploiting shortcuts, and where the agent has to maintain consistent internal state, update beliefs based on outcomes, and orchestrate multi-step workflows. That maps almost word for word to what this environment does. The reward function is explicitly designed to prevent shortcut exploitation. The agent has to track fuel moisture drift, fleet status across the prep and travel and operate and return cycle, and forecasted weather changes. The causal reasoning piece is exactly the firestorm story, the agent has to learn that wind and slope and fuel and buoyancy compose causally, not as independent features. And wildfire incident command is a professional task in the most literal sense, there are NWCG-certified incident commanders whose entire job is this dispatch problem.
 
-## A Bug That Taught Me Something
+There is also a strong secondary fit to Theme 2, Long-Horizon Planning. Rewards are sparse and delayed, the fire-extinguished terminal bonus only fires once at the end of the episode. Multi-step reasoning is forced by the resource model, dozers take 15 minutes of prep plus travel time before they cut their first foot of line, so commitments must be made many steps before the payoff arrives. And the recover-from-early-mistakes property holds, if you misallocate the air tanker early it is gone for 30 minutes and you have to adapt the rest of your plan around that gap.
 
-One of the most useful mistakes happened during evaluation.
-
-I first tried to run episodes through raw HTTP calls: `POST /reset`, then `POST /step`, then another `POST /step`.
-
-The numbers looked strange. The observation kept coming back like the episode was not really moving forward. Eventually I realized why: the OpenEnv HTTP handlers are stateless. Each `POST /step` creates a fresh environment, steps once, and then throws it away.
-
-That is fine for quick checks, but it is not a real rollout.
-
-For a real multi-turn episode, I had to use the official OpenEnv `EnvClient` through `WS /ws`. That keeps the environment alive across the whole episode.
-
-It sounds like a technical detail, but it mattered a lot. A long-horizon planning environment is only meaningful if the world remembers what happened.
-
-So the final evaluation uses the WebSocket path for `reset` and `step`, then calls `POST /grader` at the end. Both the untrained and trained policies are judged through the live Hugging Face Space.
-
-## Teaching Without Letting the Agent Cheat
-
-Designing the reward was harder than I expected.
-
-If the reward is too simple, the model can learn weird shortcuts. If it gets points for containment, maybe it waits for the fire to burn itself out. If actions cost something, maybe it learns to do nothing. If structure loss is punished every step, maybe one bad event dominates the whole episode.
-
-So I split the problem into two parts.
-
-The dense reward helps training step by step. It rewards useful suppression, structure protection, area preservation, and faster containment. It also punishes no-ops, duplicate dispatches, invalid actions, unsafe ground assignments, and low-impact moves.
-
-The final grader is separate. It gives a score strictly inside `(0, 1)` using five parts:
-
-- `45%` structure protection
-- `20%` area preservation
-- `15%` active containment
-- `10%` spread limit
-- `10%` efficiency
-
-I also wrote a reward audit. It runs normal policies and obviously bad policies like no-op, stage-all, invalid duplicate dispatch, and random valid actions. The goal was to make sure the bad policies do not accidentally look good.
-
-On the current audit, the exploit-like policies stay below the sane heuristic policies. That does not make the reward perfect, but it made me more confident that the environment was not rewarding the most obvious wrong behavior.
-
-## Training the Commander
-
-For training, I used `Qwen/Qwen3-4B-Instruct-2507` with LoRA / QLoRA and GRPO. The
-path I used is the
-[Hugging Face runtime notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb)
-(all training and eval in one file). **Cell 4** runs a **20-iteration** `deadline_v2_a10g`
-`Config` (compressed curriculum, tuned for a single A10G), not the **60-iteration**
-default in `train_grpo.py`. See the notebook and `grpo_wildfire/config.json`
-for exact hyperparameters.
-
-The model has to output structured JSON actions. To make that less fragile, I used grammar-constrained decoding. The training curriculum moves from easy to medium to hard incidents.
-
-The important part is that the model acts over many turns. It observes the incident, sends an action, receives the next state, and keeps going until the episode ends.
-
-The final comparison is meant to be fair:
-
-- same live Hugging Face Space
-- same held-out seeds
-- same generation settings
-- same episode limits
-- same final grader
-
-The final evidence lives in files like:
-
-- `submission_artifacts/eval_untrained.json`
-- `submission_artifacts/eval_trained.json`
-- `submission_artifacts/training_reward_curve.png`
-- `submission_artifacts/training_loss_curve.png`
-- `submission_artifacts/training_summary.md`
-- `reward_audit.json`
-
-Even if the trained model is not perfect, I think the environment still matters. The real goal is to create a world where planning can be tested: uncertainty, delays, scarce resources, safety tradeoffs, and weather-driven consequences.
-
-## The Choices Behind the Numbers
-
-I want to be honest about the tradeoffs that shaped what this submission can and cannot show.
-
-### Why a 4B model and not a 1B one
-
-The first version of this project tried `Qwen2.5-1.5B`. On paper it was the obvious pick: faster training, more iterations per hour, and a bigger relative jump from baseline to trained.
-
-In practice it broke on the action structure.
-
-Each action is a nested JSON object: a unit ID, a mission type, a target shape with waypoints, and a commitment length. Not every mission type is valid for every resource type. Not every target shape is valid for every mission type. The unit IDs change every observation. Grammar-constrained decoding can keep the JSON well-formed, but it cannot tell the model that a dozer cannot do a water drop or that a smokejumper cannot build a polygon. Smaller models kept producing valid-looking actions that the environment had to reject.
-
-When the environment rejects too many actions, the GRPO reward signal becomes noise. You are no longer training a wildfire policy. You are training a JSON validator that occasionally also fights fires.
-
-So I moved to `Qwen3-4B-Instruct-2507`. The base model already understands the action structure well enough that even untrained, the parse rate stays close to perfect through every observation. That lets GRPO actually focus on tactics: which unit, where, for how long, and why now.
-
-The cost is real. A 4B model on a single A10G is slower per training step. I made the call anyway, because a small jump on a fair signal seemed more honest than a large jump on a broken signal.
-
-### How much training actually happened
-
-I want to be specific about this, because it shapes what you should and should not read into the eval numbers.
-
-The Hugging Face notebook run uses **Cell 4** = **`deadline_v2_a10g`**: **20
-GRPO iterations** with a compressed curriculum (easy / medium / hard stage
-lengths in the notebook) and the knobs there (`group_size=4`, `seeds_per_iter=2`,
-`micro_batch_size=2`, etc.). That is a shorter schedule than the **60-iteration**
-default in `train_grpo.py` (roughly 240 episode slots in the default math).
-
-The checked-in `train_grpo.py` default is still the longer “full” configuration
-I would run with more wall-clock. For the hackathon run, the source of truth is
-`grpo_wildfire/config.json` and `grpo_wildfire/log.jsonl` on disk, not this blog.
-
-### What that training budget buys you
-
-Twenty iterations of GRPO on a 4B model is a real slice of training, not a
-one-step smoke test, but it is still not “solve wildfire” scale.
-
-The trained model is better than the untrained model. It uses more of the fleet, plans further ahead, and avoids more of the obviously bad moves. It is still beaten on some seeds by the hand-written heuristic baseline that has years of operational logic written into it line by line.
-
-I think that comparison is the right one to look at. The interesting question for an environment like this is not "did the agent beat a number". It is "does training in this environment teach the agent something that transfers across seeds it never saw". The numbers answer that, even when the absolute scores are not flashy.
-
-### What I would do with more compute
-
-If I had another two days of A10G time, the order of priority would be:
-
-1. Run the default **60-iteration** `train_grpo.py` configuration end to end, or continue past 20 iters, so the hard stage gets more of the total budget. A larger held-out seed bank would also stress-test generalization more honestly.
-2. Behavior cloning the heuristic baseline first, then GRPO on top. That gives the model a strong prior on the constraint structure and lets RL focus purely on tactics.
-3. Curriculum stages with explicit fog-of-war and weather-shift mini-episodes, so the model is forced to handle each pressure in isolation before they all combine.
-4. A larger held-out set, ideally 25-50 seeds per task, so the trained-versus-baseline gap can be reported with proper confidence intervals.
-
-None of these are research stretches. They are time stretches.
-
-### What I would not change
-
-The environment design. The two-stage reward and grader. The OpenEnv WebSocket transport. The grammar-constrained action format. The reward audit. The held-out seeds. Those are the parts I want the next agent to inherit.
-
-The agent is the variable. The environment is the contribution.
-
-## What I Learned
-
-The biggest lesson was that AI can make something look finished before it is actually correct.
-
-At the beginning, I was asking Claude to build things and accepting too much too quickly. It felt productive, but I was not always checking whether the result matched the problem.
-
-The project improved when I stopped treating AI like an autopilot and started treating it like a collaborator I had to challenge.
-
-The first version gave me a scaffold. The second version came from asking harder questions:
-
-Is this really dynamic?
-
-Can the agent make a bad early decision and suffer for it later?
-
-Does the world keep state?
-
-Can the reward be hacked?
-
-Does the agent have to plan, or is it just reacting?
-
-That process changed how I think about building environments. A good environment should not just look complex. It should create pressure. It should make the agent choose between imperfect options. It should make consequences arrive later.
-
-That is what I tried to build here.
-
-Not a perfect wildfire simulator. Not a real firefighting tool. But a serious planning environment where an AI incident commander has to reason under uncertainty and live with its decisions.
-
-An environment to save the environment.
-
-## Why This File Is Here
-
-The judges asked for the blog as a separate Markdown file in the Hugging Face Space, separate from the README. That is why this file is named `Blog.MD`.
-
-The Space is where the environment lives, so it makes sense for the story, code, README, eval scripts, and artifacts to live there too.
-
-## References and Influences
-
-- Rothermel, R. C. (1972), wildfire spread modeling
-- Alexandridis et al., cellular automata wildfire modeling
-- Albini-style spotting approximations
-- NWCG operational concepts, including LCES and dispatch timing
-- Australia 2019-2020 Black Summer
-- California 2020 wildfire season
-
-## Links
-
-- Live Space: https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env
-- Live app: https://chunchunmaru-101-wildfire-env.hf.space
-- Full GPU notebook (training + OpenEnv eval + plots, Space): https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb
-- Repository README (full technical writeup, references, repo layout): ./README.md
-- Training pipeline: ./train_grpo.py
-- OpenEnv evaluator: ./eval_policy_http.py
+Built for the benefit of the environment, one Rothermel coefficient at a time.

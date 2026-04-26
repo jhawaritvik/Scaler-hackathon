@@ -23,9 +23,7 @@ evaluator. The filename is preserved for README/notebook references. A thin `eva
 **Canonical path:** the Space and local
 `notebooks/wildfire_train_eval_hf.ipynb` are one document — **Cell 4** = full
 **20-iter** `deadline_v2_a10g` training; **cells 5+** = OpenEnv eval, plots, and
-`submission_artifacts/`. The older
-`wildfire_grpo_train_hf.ipynb` / `wildfire_eval_plots_hf.ipynb` are one-cell
-redirects. `python train_grpo.py` alone is still the **60-iter** default. README
+`submission_artifacts/`. `python train_grpo.py` alone is still the **60-iter** default. README
 and `Blog.MD` point to the unified notebook. The
 long block below is extra **historical** context from mid-run.
 
