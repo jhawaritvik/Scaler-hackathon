@@ -23,6 +23,10 @@ Episode termination is governed by the environment itself
 rather than an arbitrary CLI cap, so delayed ignitions actually have time to
 fire.  ``--max-episode-steps`` is preserved as an *upper-bound* override for
 deadline-driven smoke runs only.
+
+Pass ``--plot-training`` after a successful eval to also run the
+``plot_training_curves.py`` writer (``grpo_wildfire/log.jsonl`` →
+``submission_artifacts/training_*.png`` and ``training_summary.md``).
 """
 from __future__ import annotations
 
@@ -32,12 +36,28 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 import urllib.error
 import urllib.request
 from typing import Any
 
 import numpy as np
 import torch
+
+_WS_RETRY_EXC: tuple[type[BaseException], ...] = (ConnectionError, OSError, BrokenPipeError)
+try:
+    from websockets.exceptions import ConnectionClosed as _ConnectionClosed  # type: ignore
+
+    _WS_RETRY_EXC = _WS_RETRY_EXC + (_ConnectionClosed,)
+except Exception:  # pragma: no cover
+    _ConnectionClosed = None  # type: ignore
+
+
+def _is_websocket_lifecycle_error(exc: BaseException) -> bool:
+    """True for errors where reconnecting the OpenEnv /ws client may help."""
+    if isinstance(exc, _WS_RETRY_EXC):
+        return True
+    return "ConnectionClosed" in type(exc).__name__
 import xgrammar as xgr
 from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 
@@ -268,86 +288,127 @@ def eval_policy_http(
     }
     all_scores: list[float] = []
 
-    # Single persistent WebSocket session for the entire eval. The server
-    # keeps one Environment instance alive for the lifetime of this session,
-    # so reset() starts a new episode and step() advances the same episode.
-    with WildfireEnv(base_url=base_url, message_timeout_s=timeout).sync() as client:
-        for task_id, seeds in eval_tasks.items():
-            print(f"\n── {task_id} over OpenEnv WebSocket ──")
-            task_scores: list[float] = []
-            task_episodes: list[dict[str, Any]] = []
+    # Single persistent WebSocket session for the entire eval. The server keeps
+    # one environment instance alive for the lifetime of the session, so
+    # reset() starts a new episode and step() advances the same episode.
+    #
+    # Hugging Face Spaces (and any proxy in front) can close /ws with code 1000
+    # on the first client send: cold start, or a stuck single-slot session
+    # (max_concurrent_envs=1). Longer connect_timeout + a few retries usually
+    # recovers; otherwise restart the Space to clear the session.
+    connect_timeout_s = min(90.0, max(30.0, float(timeout) * 0.5))
+    last_err: BaseException | None = None
+    for attempt in range(4):
+        if attempt:
+            for tid in EVAL_TASKS:
+                results.pop(tid, None)
+            all_scores.clear()
+            delay = 3.0 * (2 ** (attempt - 1))
+            print(
+                f"OpenEnv WebSocket: retry {attempt + 1}/4 in {delay:.0f}s after {last_err!r} ...",
+                flush=True,
+            )
+            time.sleep(delay)
+        try:
+            with WildfireEnv(
+                base_url=base_url,
+                message_timeout_s=timeout,
+                connect_timeout_s=connect_timeout_s,
+            ).sync() as client:
+                for task_id, seeds in eval_tasks.items():
+                    print(f"\n── {task_id} over OpenEnv WebSocket ──")
+                    task_scores: list[float] = []
+                    task_episodes: list[dict[str, Any]] = []
 
-            for seed in seeds:
-                torch.manual_seed(seed + 777_000)
-                reset_result = client.reset(task_id=task_id, seed=seed)
-                obs = reset_result.observation
-                done = bool(reset_result.done)
+                    for seed in seeds:
+                        torch.manual_seed(seed + 777_000)
+                        reset_result = client.reset(task_id=task_id, seed=seed)
+                        obs = reset_result.observation
+                        done = bool(reset_result.done)
 
-                step_cap = _episode_step_cap(obs.max_steps, max_episode_steps_override)
+                        step_cap = _episode_step_cap(obs.max_steps, max_episode_steps_override)
 
-                parse_successes = 0
-                token_counts: list[int] = []
-                raw_failures: list[str] = []
-                started = time.time()
-                policy_calls = 0
+                        parse_successes = 0
+                        token_counts: list[int] = []
+                        raw_failures: list[str] = []
+                        started = time.time()
+                        policy_calls = 0
 
-                while not done and obs.step < step_cap:
-                    action, parse_ok, token_count, raw_text = _generate_action(
-                        model, tokenizer, compiled_grammar, obs, config, device
-                    )
-                    parse_successes += int(parse_ok)
-                    token_counts.append(token_count)
-                    if not parse_ok and len(raw_failures) < 3:
-                        raw_failures.append(raw_text[:500])
+                        while not done and obs.step < step_cap:
+                            action, parse_ok, token_count, raw_text = _generate_action(
+                                model, tokenizer, compiled_grammar, obs, config, device
+                            )
+                            parse_successes += int(parse_ok)
+                            token_counts.append(token_count)
+                            if not parse_ok and len(raw_failures) < 3:
+                                raw_failures.append(raw_text[:500])
 
-                    step_result = client.step(action)
-                    obs = step_result.observation
-                    done = bool(step_result.done)
-                    policy_calls += 1
+                            step_result = client.step(action)
+                            obs = step_result.observation
+                            done = bool(step_result.done)
+                            policy_calls += 1
 
-                grade = _grade_final_observation(base_url, obs, seed, timeout=timeout)
-                score = float(grade["score"])
-                task_scores.append(score)
-                all_scores.append(score)
+                        grade = _grade_final_observation(base_url, obs, seed, timeout=timeout)
+                        score = float(grade["score"])
+                        task_scores.append(score)
+                        all_scores.append(score)
 
-                episode = {
-                    "seed": seed,
-                    "score": score,
-                    "steps": obs.step,
-                    "step_cap": step_cap,
-                    "env_max_steps": obs.max_steps,
-                    "policy_calls": policy_calls,
-                    "done": done,
-                    "parse_successes": parse_successes,
-                    "parse_total": len(token_counts),
-                    "parse_success_rate": parse_successes / max(1, len(token_counts)),
-                    "mean_completion_tokens": float(np.mean(token_counts)) if token_counts else 0.0,
-                    "burned_cells": obs.burned_cells,
-                    "burning_cells": obs.burning_cells,
-                    "structures_remaining": obs.structures_remaining,
-                    "structures_lost": obs.structures_lost,
-                    "grader_components": grade.get("components", {}),
-                    "duration_seconds": time.time() - started,
-                    "raw_parse_failures": raw_failures,
-                }
-                task_episodes.append(episode)
-                print(
-                    f"  seed={seed:4d}  grader={score:.4f}  "
-                    f"steps={obs.step:2d}/{step_cap}  "
-                    f"parse={parse_successes}/{max(1, len(token_counts))}  "
-                    f"burning={obs.burning_cells}  burned={obs.burned_cells}"
-                )
+                        episode = {
+                            "seed": seed,
+                            "score": score,
+                            "steps": obs.step,
+                            "step_cap": step_cap,
+                            "env_max_steps": obs.max_steps,
+                            "policy_calls": policy_calls,
+                            "done": done,
+                            "parse_successes": parse_successes,
+                            "parse_total": len(token_counts),
+                            "parse_success_rate": parse_successes / max(1, len(token_counts)),
+                            "mean_completion_tokens": float(np.mean(token_counts)) if token_counts else 0.0,
+                            "burned_cells": obs.burned_cells,
+                            "burning_cells": obs.burning_cells,
+                            "structures_remaining": obs.structures_remaining,
+                            "structures_lost": obs.structures_lost,
+                            "grader_components": grade.get("components", {}),
+                            "duration_seconds": time.time() - started,
+                            "raw_parse_failures": raw_failures,
+                        }
+                        task_episodes.append(episode)
+                        print(
+                            f"  seed={seed:4d}  grader={score:.4f}  "
+                            f"steps={obs.step:2d}/{step_cap}  "
+                            f"parse={parse_successes}/{max(1, len(token_counts))}  "
+                            f"burning={obs.burning_cells}  burned={obs.burned_cells}"
+                        )
 
-            if task_scores:
-                results[task_id] = {
-                    "scores": task_scores,
-                    "episodes": task_episodes,
-                    "mean": float(np.mean(task_scores)),
-                    "std": float(np.std(task_scores)),
-                    "min": float(np.min(task_scores)),
-                    "max": float(np.max(task_scores)),
-                }
-                print(f"  {task_id}: mean={results[task_id]['mean']:.4f} ± {results[task_id]['std']:.4f}")
+                    if task_scores:
+                        results[task_id] = {
+                            "scores": task_scores,
+                            "episodes": task_episodes,
+                            "mean": float(np.mean(task_scores)),
+                            "std": float(np.std(task_scores)),
+                            "min": float(np.min(task_scores)),
+                            "max": float(np.max(task_scores)),
+                        }
+                        print(
+                            f"  {task_id}: mean={results[task_id]['mean']:.4f} "
+                            f"± {results[task_id]['std']:.4f}"
+                        )
+        except Exception as e:  # noqa: BLE001 — retry only known transient WS cases
+            last_err = e
+            if not _is_websocket_lifecycle_error(e):
+                raise
+            if attempt == 3:
+                raise RuntimeError(
+                    "WebSocket to the environment closed before completing eval. "
+                    "Common causes: (1) Stuck /ws session on the Space — the server "
+                    "only allows one WebSocket at a time (max_concurrent_envs=1); "
+                    "Factory-restart the Space. (2) Space still waking; wait and re-run. "
+                    f"Last error: {e!r}"
+                ) from e
+            continue
+        else:
+            break
 
     results["overall_mean"] = float(np.mean(all_scores)) if all_scores else 0.0
     os.makedirs(os.path.dirname(output_json) or ".", exist_ok=True)
@@ -446,6 +507,24 @@ def run_parallel_eval(args: argparse.Namespace) -> None:
     if failures:
         raise SystemExit(f"{failures} shard process(es) failed")
     merge_result_files(shard_paths, args.output)
+    maybe_generate_training_plots(args)
+
+
+def maybe_generate_training_plots(args: argparse.Namespace) -> None:
+    """Optionally run the same writer as ``plot_training_curves.py`` after eval."""
+    if not args.plot_training:
+        return
+    from plot_training_curves import generate_training_plots  # local import: PIL, etc.
+
+    log_path = Path(args.training_log) if args.training_log else Path(Config().output_dir) / "log.jsonl"
+    out_dir = Path(args.plot_out_dir) if args.plot_out_dir else Path("submission_artifacts")
+    try:
+        generate_training_plots(log_path, out_dir)
+    except FileNotFoundError as e:
+        print(f"Note: --plot-training skipped: {e}")
+    except Exception as e:
+        print(f"Error: --plot-training failed: {e}")
+        raise SystemExit(1) from e
 
 
 def parse_args() -> argparse.Namespace:
@@ -499,6 +578,25 @@ def parse_args() -> argparse.Namespace:
         default="submission_artifacts/eval_trained.json",
         help="Path for output JSON.",
     )
+    parser.add_argument(
+        "--plot-training",
+        action="store_true",
+        help=(
+            "After eval, read the GRPO log.jsonl and write the same training "
+            "curves and training_summary.md as plot_training_curves.py into "
+            "--plot-out-dir (default submission_artifacts/)."
+        ),
+    )
+    parser.add_argument(
+        "--training-log",
+        default=None,
+        help="Path to train_grpo log.jsonl (default: <Config.output_dir>/log.jsonl, usually grpo_wildfire/log.jsonl).",
+    )
+    parser.add_argument(
+        "--plot-out-dir",
+        default=None,
+        help="Output directory for training plots (default: submission_artifacts).",
+    )
     parser.add_argument("--timeout", type=float, default=120.0, help="Per-message timeout in seconds.")
     return parser.parse_args()
 
@@ -531,3 +629,4 @@ if __name__ == "__main__":
         timeout=args.timeout,
         max_episode_steps_override=args.max_episode_steps,
     )
+    maybe_generate_training_plots(args)

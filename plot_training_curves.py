@@ -495,15 +495,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    if not args.log.exists():
+def generate_training_plots(log_path: Path, out_dir: Path) -> None:
+    """Write reward/loss SVG+PNG and ``training_summary.md`` from a GRPO ``log.jsonl``."""
+    if not log_path.exists():
         raise FileNotFoundError(
-            f"Training log not found at {args.log}. Run train_grpo.py first or pass --log."
+            f"Training log not found at {log_path}. Run train_grpo.py first or pass a valid --log / --training-log."
         )
 
-    records = load_training_log(args.log)
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    records = load_training_log(log_path)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     reward_specs = [
         MetricSpec("mean_return", "Mean Trajectory Return", "#2563eb"),
@@ -517,17 +517,22 @@ def main() -> None:
 
     reward_title = "Wildfire GRPO Reward Curves"
     loss_title = "Wildfire GRPO Optimisation Curves"
-    write_svg(args.out_dir / "training_reward_curve.svg", reward_title, records, reward_specs)
-    write_svg(args.out_dir / "training_loss_curve.svg", loss_title, records, loss_specs)
-    write_png(args.out_dir / "training_reward_curve.png", reward_title, records, reward_specs)
-    write_png(args.out_dir / "training_loss_curve.png", loss_title, records, loss_specs)
-    write_summary(args.out_dir / "training_summary.md", records)
+    write_svg(out_dir / "training_reward_curve.svg", reward_title, records, reward_specs)
+    write_svg(out_dir / "training_loss_curve.svg", loss_title, records, loss_specs)
+    write_png(out_dir / "training_reward_curve.png", reward_title, records, reward_specs)
+    write_png(out_dir / "training_loss_curve.png", loss_title, records, loss_specs)
+    write_summary(out_dir / "training_summary.md", records)
 
-    print(f"Wrote {args.out_dir / 'training_reward_curve.svg'}")
-    print(f"Wrote {args.out_dir / 'training_loss_curve.svg'}")
-    print(f"Wrote {args.out_dir / 'training_reward_curve.png'}")
-    print(f"Wrote {args.out_dir / 'training_loss_curve.png'}")
-    print(f"Wrote {args.out_dir / 'training_summary.md'}")
+    print(f"Wrote {out_dir / 'training_reward_curve.svg'}")
+    print(f"Wrote {out_dir / 'training_loss_curve.svg'}")
+    print(f"Wrote {out_dir / 'training_reward_curve.png'}")
+    print(f"Wrote {out_dir / 'training_loss_curve.png'}")
+    print(f"Wrote {out_dir / 'training_summary.md'}")
+
+
+def main() -> None:
+    args = parse_args()
+    generate_training_plots(args.log, args.out_dir)
 
 
 if __name__ == "__main__":

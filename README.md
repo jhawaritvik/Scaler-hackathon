@@ -62,12 +62,11 @@ This submission is a single-agent world-modeling environment with long-horizon p
 
 - **Live Space:** [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
 - **Live app:** [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
-- **Training pipeline:** [`train_grpo.py`](./train_grpo.py) — also runnable via [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)
-- **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) — 84 fixed-seed episodes, no exploit-class policy flagged
+- **Training pipeline:** [`train_grpo.py`](./train_grpo.py) — primary GPU path is the [Space-hosted training notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb) (kept in sync with [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb))
+- **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) — 84 fixed-seed episodes (7 policies × 4 seeds per task × 3 tasks; seed list in `DEFAULT_AUDIT_SEED_BANK`, not the GRPO `seeds_per_task` pool), no exploit-class policy flagged
 - **OpenEnv showcase eval:** [`eval_policy_http.py`](./eval_policy_http.py) drives both untrained and trained policies via the official OpenEnv `EnvClient` WebSocket session (`reset`/`step` on `/ws`) plus the wildfire `POST /grader` HTTP endpoint
 - **Submission artifact helpers:** [`plot_training_curves.py`](./plot_training_curves.py) and [`submission_check.py`](./submission_check.py)
 - **Writeup:** [`Blog.MD`](./Blog.MD) — the separate judge-facing blog file requested for the Hugging Face Space
-- **Demo video:** add YouTube URL here if a video is created before submission
 - **Submission artifacts after a real GPU run:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png), [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png), [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json), [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json), [`submission_artifacts/training_summary.md`](./submission_artifacts/training_summary.md)
 
 ---
@@ -108,7 +107,7 @@ the obvious shortcut policies fail.
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-class flagging
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) — turns `log.jsonl` into judge-friendly SVG/PNG reward/loss curves with no extra plotting dependency
 - Submission readiness checker ([`submission_check.py`](./submission_check.py)) for the final hackathon packaging pass
-- Hugging Face notebooks: [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb) (GPU training) and [`notebooks/wildfire_http_eval_hf.ipynb`](./notebooks/wildfire_http_eval_hf.ipynb) (OpenEnv eval + final artifacts)
+- Hugging Face notebooks: [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb) (four code cells: GRPO **Cell 4** = 20-iter `deadline_v2_a10g`; [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb)) and [`notebooks/wildfire_http_eval_hf.ipynb`](./notebooks/wildfire_http_eval_hf.ipynb) (OpenEnv HTTP eval + plots/artifacts)
 
 ---
 
@@ -265,19 +264,23 @@ Dimas Tech Tip; aerial drop reload cycles and effectiveness use the USDA FS
 
 Three graded difficulty levels with cellular-automaton fire spread
 (Alexandridis 2008, Rothermel 1972). Per-task spec below; `DIFFICULTY_SPECS`
-(`wildfire_env/server/terrain.py`) is the source of truth.
+(`wildfire_env/server/terrain.py`) is the source of truth for **ranges**. The
+**weather, water, structure mix, and fleet** numbers in the table are the
+values **resolved at `DEFAULT_SEEDS`** (`easy=7`, `medium=6`, `hard=9`); other
+seeds draw different concrete scenarios within the same spec ranges.
 
 | | easy | medium | hard |
 |---|---|---|---|
 | Grid | 15×15 | 20×20 | 25×25 |
 | Max steps | 20 | 20 | 25 |
 | Default seed | 7 | 6 | 9 |
-| Ignitions | 1 + 1 delayed | 2 + 1-2 delayed | 2 + 2-3 delayed |
-| Temperature | ~29.4 °C | ~32.5 °C | ~38.1 °C |
-| Humidity | ~42.5% | ~30.2% | ~38.5% |
-| Wind | ~10.5 km/h | ~19.2 km/h | ~21.5 km/h |
-| Water bodies | 2 | 1 | 1 |
-| Structures | 4 × P1 | 2 × P1 + 3 × P2 | 2 × P1 + 3 × P2 |
+| Step-0 ignition groups (range) | 1–2 | 2 | 2 |
+| Delayed ignition groups (range) | 0–1 | 1–2 | 2–3 |
+| Temperature (at default seed) | ~29.4 °C | ~32.5 °C | ~38.1 °C |
+| Humidity (at default seed) | ~42.5% | ~30.2% | ~38.5% |
+| Wind (at default seed) | ~10.5 km/h | ~19.2 km/h | ~21.5 km/h |
+| Water bodies (at default seed) | 2 | 1 | 1 |
+| Structures (at default seed) | 4 × P1 | 2 × P1 + 3 × P2 | 2 × P1 + 3 × P2 |
 | Default seeded resources | 2c 1e 1h 1d | 3c 3e 2h 1d | 5c 3e 1h 1a 2d 1s |
 | Warmup before first observation | 0 steps | 0 steps | 2 steps (40 min) |
 
@@ -365,7 +368,8 @@ protect the training signal:
 
 A fixed 7-policy bank — `noop`, `heuristic`, `heuristic_ground_only`,
 `heuristic_aerial_only`, `stage_all`, `invalid_duplicate`, `random_valid` —
-runs 84 episodes across the curriculum seed bank. We check rank correlation
+runs 84 episodes using `DEFAULT_AUDIT_SEED_BANK` in `reward_audit.py` (four
+seeds per task, independent of `train_grpo.py`’s `seeds_per_task`). We check rank correlation
 between the dense shaped reward and the deterministic grader, and flag any
 exploit-class policy that out-ranks `heuristic` on the grader.
 
@@ -399,7 +403,7 @@ Rerun with:
 | `POST` | `/step` | Submit action, advance one tick; returns observation |
 | `GET` | `/state` | Return current environment state |
 | `GET` | `/schema` | Return action and observation JSON schemas |
-| `WS` | `/ws` | **Persistent WebSocket session** for multi-step episodes (used by `EnvClient`) |
+| `WS` | `/ws` | **Stateful WebSocket session** for multi-step episodes (used by `EnvClient`; clients may reconnect after transient proxy/Space errors) |
 | `GET` | `/tasks` | List all tasks, action schema, resource-mission compatibility |
 | `POST` | `/grader` | Grade a completed episode (pass final observation data) |
 | `GET` | `/baseline` | Run deterministic heuristic agent; return reproducible scores |
@@ -441,7 +445,8 @@ curl -X POST http://localhost:8000/grader \
 
 Deterministic heuristic baseline measured on five **held-out** seeds per task
 (no overlap with the 16-seed training pool in `train_grpo.py`). All seeds
-were selected from a 0-79 sweep and filtered to heuristic grader in
+were selected from an expanded per-task sweep (training pool draws include
+seed **80** on easy/hard) and filtered to heuristic grader in
 `[0.2, 0.85]` (signal-rich; excludes dead-zone and trivially-won scenarios).
 
 | task | mean | min | max | held-out eval seeds |
@@ -459,9 +464,11 @@ priority structures.
 
 The showcase evaluation in [`eval_policy_http.py`](./eval_policy_http.py)
 runs the same five seeds per task through the official OpenEnv `EnvClient`
-WebSocket session (one persistent `/ws` connection drives `reset` then
-`step` per episode) plus the wildfire-specific `POST /grader` endpoint for
-the final score. Each episode runs to the env's own `max_steps` (20 for
+WebSocket session: a **single** `WildfireEnv(...).sync()` context keeps
+`/ws` open for the whole run (`reset` then `step` per episode; optional
+reconnect with backoff on transient `ConnectionClosed` / proxy errors, up to
+four attempts) plus the wildfire-specific `POST /grader` HTTP call at
+episode end. Each episode runs to the env's own `max_steps` (20 for
 easy/medium, 25 for hard) so delayed ignitions actually have time to fire —
 no arbitrary truncation. The trained-vs-baseline delta in
 `submission_artifacts/eval_*.json` is therefore a clean held-out OpenEnv
@@ -490,11 +497,10 @@ in.
 
 The *default* `Config` in `train_grpo.py` does not. The compute budget
 **for that default** is 60 GRPO iterations × 4 trajectories =
-**240 total episodes**. The **20-iteration** `deadline_v2_a10g`
-submission run used `seeds_per_iter=1`, `group_size=2`, and 20 iters —
-i.e. on the order of **40** training episodes — so the default "240" math
-does not apply to the submitted hackathon run; see
-[`Blog.MD`](./Blog.MD#how-much-training-actually-happened).
+**240 total episodes** (`python train_grpo.py` with no overrides). The
+[Hugging Face training notebook](./notebooks/wildfire_training_eval_hf.ipynb)
+uses a **20-iteration** `deadline_v2_a10g` schedule in Cell 4 instead — see
+that file and `grpo_wildfire/config.json` after a run.
 
 Stretching 240 episodes across 1000 unique seeds means each scenario is
 seen ~0.24 times on average — far below what GRPO needs for meaningful
@@ -509,15 +515,16 @@ The 16-seed pool is the deliberate middle ground:
   `vary_env_seed_in_group=True`, each iteration visits ~4 unique scenarios.
   Over 60 iterations the policy sees roughly 120-200 distinct env states
   with meaningful repetition (~5-10 per scenario), enough for stable advantages.
-- **Difficulty filtering.** Seeds were screened against a 0-79 sweep of the
-  heuristic. Seeds outside the 0.2-0.85 grader range were dropped: dead-zone
+- **Difficulty filtering.** Seeds were screened against a broad sweep of the
+  heuristic (per-task; the training pool includes seed 80 on easy/hard). Seeds outside the 0.2-0.85 grader range were dropped: dead-zone
   seeds (heuristic ≈ 0) collapse within-group variance, and trivially-won
   seeds (heuristic ≈ 1) leave no headroom for the policy to learn from.
 - **Difficulty spread.** The 16 seeds per task are picked evenly across the
   surviving 0.2-0.85 range, so the curriculum sees a representative slice
   at each difficulty tier rather than clustering on one variant.
-- **Held-out generalization check.** The eval seeds (5 per task) are pulled
-  from the same sweep but disjoint from training. If the trained policy
+- **Held-out generalization check.** The eval seeds (5 per task) are drawn
+  from the same style of screening but are disjoint from the 16 training
+  seeds per task. If the trained policy
   beats the heuristic on training seeds but not eval seeds, that's
   overfitting to the pool — the eval JSONs are designed to surface that
   failure mode.
@@ -526,21 +533,18 @@ The honest tradeoff: a wider seed pool would generalize better *if* the
 compute existed to support it. Under the default 60-iter `Config`,
 concentrating those 240 episodes on 16 representative scenarios is the
 intended way to get a more reliable gradient than spreading the same budget
-across thousands of one-off seeds. The **submitted** `deadline_v2_a10g`
-run is deliberately shorter — see [`Blog.MD`](./Blog.MD) for the exact
-tradeoff.
+across thousands of one-off seeds.
 
-### Default 60-iter vs submitted 20-iter `deadline_v2_a10g`
+### Training notebook vs `train_grpo.py`
 
-| | default (`python train_grpo.py`) | submitted (`deadline_v2_a10g`) |
-|---|---|---|
-| total iterations | 60 | 20 |
-| `group_size` | 4 | 2 |
-| `seeds_per_iter` | 2 | 1 |
-| curriculum | easy 0-10, medium 10-25, hard 25-60 | easy 0-5, medium 5-12, hard 12-20 |
-| approx total episodes | ~240 | ~40 |
-| where to launch | `python train_grpo.py` | Cell 4 of `notebooks/wildfire_training_eval_hf.ipynb` |
-| story in `Blog.MD` | tuned-for config | actual hackathon submission |
+The [Hugging Face Space copy](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb)
+and [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)
+should stay in sync. The notebook has **four code cells**; **Cell 4** runs a
+full **20-iteration** `deadline_v2_a10g` `Config` (compressed curriculum, larger
+`micro_batch_size` on A10G — see the notebook source). For the **60-iteration**
+default [`Config`](./train_grpo.py), run `python train_grpo.py` from the repo
+root. After any run, `grpo_wildfire/config.json` and `grpo_wildfire/log.jsonl`
+are the source of truth.
 
 `train_grpo.py` is **resume-safe**: every iter writes
 `grpo_wildfire/latest/`, `optimizer_state.pt`, and `resume_state.json`. On
@@ -603,22 +607,7 @@ automatically for the 20×20 medium and 25×25 hard tasks.
 
 ```text
 http://localhost:8000/viewer                                # live heuristic stream
-http://localhost:8000/viewer?replay=replays/foo.json        # replay a captured episode
-```
-
-For the submission demo video, use [`capture_replay.py`](./capture_replay.py)
-to record a single trained-policy episode (or heuristic baseline on the
-same seed for side-by-side comparison):
-
-```bash
-# Trained LLM (GPU required) — also captures the model's plan field per step
-python capture_replay.py --task hard --seed 9 --policy llm \
-    --adapter grpo_wildfire/best_adapter_hard \
-    --output replays/trained_hard_9.json
-
-# Heuristic baseline on the same seed (no GPU)
-python capture_replay.py --task hard --seed 9 --policy heuristic \
-    --output replays/heuristic_hard_9.json
+http://localhost:8000/viewer?replay=replays/foo.json        # stream a pre-recorded JSON replay (see /demo_replay)
 ```
 
 `GET /replays` returns an index of every JSON visible to the server under
@@ -638,15 +627,18 @@ Once you have GPU access, this is the clean path to a final submission package:
 .\.venv\Scripts\python.exe submission_check.py --strict
 ```
 
-`--plot-training` writes the same `training_*.png` / `training_summary.md` as [`plot_training_curves.py`](./plot_training_curves.py) if `grpo_wildfire/log.jsonl` exists. Alternatively run `plot_training_curves.py` once after training.
+`--plot-training` on the trained run writes the same `training_*.png/.svg` and
+`training_summary.md` as [`plot_training_curves.py`](./plot_training_curves.py)
+when `grpo_wildfire/log.jsonl` exists (output goes to `submission_artifacts/`). You
+can run `plot_training_curves.py` separately instead if you prefer.
 
-> **Note:** `python train_grpo.py` runs the **default 60-iteration**
-> configuration the environment was tuned for. The actual hackathon
-> submission was produced by the **20-iteration `deadline_v2_a10g`**
-> configuration, run from Cell 4 of
+> **Note:** `python train_grpo.py` runs the **default 60-iteration** configuration
+> the environment was tuned for. The actual hackathon submission was produced
+> by the **20-iteration `deadline_v2_a10g`** run from Cell 4 of
 > [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)
-> on a single A10G. To reproduce the submitted run, use that notebook cell
-> instead of the bare `python train_grpo.py` line above.
+> (see the [public Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb)).
+> Reproduce the submitted run with that notebook, not the bare `python train_grpo.py` line
+> above.
 
 `train_grpo.py` writes `config.json`, `task_catalog.json`, `run_status.json`,
 `checkpoint_index.json`, `latest_metrics.json`, `latest/`,
@@ -669,11 +661,12 @@ The repository is wired to generate these files after a real GPU run:
 - `submission_artifacts/eval_untrained.json`
 - `submission_artifacts/eval_trained.json`
 
-Run [`plot_training_curves.py`](./plot_training_curves.py) after training
-to materialize the plots and summary for the current HEAD, then run
-[`eval_policy_http.py`](./eval_policy_http.py) for baseline and trained
-OpenEnv showcase scores. The evaluator opens one persistent WebSocket
-session per run; per-episode rollouts execute `reset` once then `step`
+After training, run [`eval_policy_http.py`](./eval_policy_http.py) for
+baseline and trained OpenEnv scores; add `--plot-training` on the trained
+call (or run [`plot_training_curves.py`](./plot_training_curves.py) once) to
+materialize the plots and summary. The evaluator usually completes the full eval in
+one `WildfireEnv` WebSocket context; on transient connection drops it
+retries with backoff. Per-episode rollouts use `reset` once then `step`
 until the env reports `done` or hits its own `max_steps`.
 
 ### Training curves
@@ -704,15 +697,15 @@ Same held-out seeds per task, [`eval_policy_http.py`](./eval_policy_http.py) on 
 - `Dockerfile` — Space container
 - `openenv.yaml` — OpenEnv manifest
 - `train_grpo.py` — multi-turn GRPO training pipeline
-- `eval_policy_http.py` — OpenEnv showcase evaluation for baseline and trained policies (uses `EnvClient` WebSocket session, kept the legacy filename for backward compatibility)
+- `eval_policy_http.py` — OpenEnv showcase evaluation for baseline and trained policies (uses `EnvClient` WebSocket session)
+- `eval_policy.py` — thin wrapper that runs `eval_policy_http` (legacy script name)
 - `smoke_test.py` — optional 1-iter GRPO preflight (GPU)
 - `reward_audit.py` — reward-hacking audit harness
 - `plot_training_curves.py` — SVG/PNG reward/loss plot generator for `log.jsonl`
 - `submission_check.py` — final packaging checker for hackathon submission
-- `capture_replay.py` — record a single LLM/heuristic episode for the demo video
 - `submission_artifacts/` — generated training plots, eval JSONs, final evidence
-- `replays/` — captured-episode JSONs for the viewer
-- `notebooks/wildfire_training_eval_hf.ipynb` — Hugging Face GPU training
+- `replays/` — optional frame JSONs for the `/viewer?replay=…` + `/demo_replay` path
+- `notebooks/wildfire_training_eval_hf.ipynb` — Hugging Face GPU training (same as [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb))
 - `notebooks/wildfire_http_eval_hf.ipynb` — OpenEnv baseline/trained evaluation and final artifacts
 - `wildfire_env/` — environment package (server, models, fire simulation, terrain)
 - `Blog.MD` — separate judge-facing writeup for the Hugging Face Space

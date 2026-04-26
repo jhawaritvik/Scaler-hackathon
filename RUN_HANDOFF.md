@@ -18,7 +18,15 @@ Submit the Wildfire OpenEnv hackathon project before the deadline with:
 
 `eval_policy_http.py` (legacy filename, now WebSocket-based) is the single
 evaluator. The filename is preserved so README/notebook/`submission_check.py`
-references keep working.
+references keep working. A thin `eval_policy.py` forwards to it for
+[`wildfire_training_eval_hf.ipynb`](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb) Cell 5.
+
+**Canonical training path:** the Space and local
+`notebooks/wildfire_training_eval_hf.ipynb` should match — **four code cells**,
+**Cell 4** = full **20-iter** `deadline_v2_a10g` (see inline `Config` in the
+notebook). `python train_grpo.py` alone is still the **60-iter** default. README
+and `Blog.MD` describe the notebook path. The long block below is extra
+**historical** context from mid-run.
 
 ## Live Space
 
@@ -85,7 +93,9 @@ Estimated cost as of around 5:48 AM was roughly `$17-18`; continuing another
 5-6 hours would bring total near `$25-27`. Stop/pause the Space immediately
 after final artifacts are produced.
 
-The original 60-iteration run was too slow. We switched to a deadline run:
+The original 60-iteration run was too slow. We later experimented with a
+shorter **historical** deadline run (not the documented main path after the
+repo reset):
 
 ```python
 from train_grpo import Config, train
@@ -106,10 +116,10 @@ train(Config(
 It may resume from `grpo_wildfire/latest` if a previous partial run exists
 (`start_iter` is read from `resume_state.json` — not necessarily 2).
 
-Canonical story for the writeup: **20 completed iterations** of this
-`deadline_v2_a10g` config (not the 60-iter default in `train_grpo.py`). The
-`Blog.MD` and `README.md` "Training" section reflect that. Mid-run log snippets
-below are **historical** and may not match the final checkpoint.
+**Historical only:** the mid-run handoff was tracking **20 completed iterations**
+of this `deadline_v2_a10g` config. Current `README.md` / `Blog.MD` describe the
+default 60-iter notebook path above. Log snippets below are **historical** and
+may not match any final checkpoint.
 
 Important: do **not** `git pull` inside the HF training runtime while Cell 4 is
 actively training. Pull only after training stops/finishes and checkpoints are
@@ -301,11 +311,9 @@ python submission_check.py --strict
 
 Before the final hackathon submission, add or verify these items:
 
-1. Public writeup/demo link in `README.md`
+1. Public writeup in `README.md`
    - Verify the README links the separate `Blog.MD` file requested for the
      Hugging Face Space.
-   - If a YouTube demo is created, link it directly from the README so judges
-     do not have to ask.
 
 2. Results table in `README.md`
    - Add a concise trained-vs-untrained OpenEnv eval table after both JSON files exist.
@@ -376,7 +384,7 @@ Before the final hackathon submission, add or verify these items:
 
 - Do not commit `grpo_wildfire/`; upload checkpoints to HF model repo instead.
 - Commit generated JSON/PNG/summary artifacts.
-- Verify the README links `Blog.MD`; add a YouTube link only if a demo video exists.
+- Verify the README links `Blog.MD`.
 - The model may not obviously improve in noisy training logs; final proof is
   same-seed OpenEnv WebSocket eval comparing untrained vs trained under
   identical flags.

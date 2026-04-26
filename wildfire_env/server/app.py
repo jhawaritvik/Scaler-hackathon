@@ -1032,7 +1032,7 @@ function startEpisode() {
   const delay = document.getElementById('speed-sl').value;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   // ?replay=<path> switches the viewer from live heuristic streaming to
-  // replaying a JSON file captured by capture_replay.py.
+  // streaming frames from a static JSON file (same frame schema as /demo).
   const params = new URLSearchParams(location.search);
   const replay = params.get('replay');
   let url;
@@ -1186,10 +1186,10 @@ async def demo_replay(
     file: str,
     delay_ms: int = 700,
 ) -> None:
-    """Stream a previously-captured episode JSON for visualization.
+    """Stream a previously-saved episode JSON for visualization.
 
-    Captured by ``capture_replay.py`` — see that script for usage. The frame
-    schema is identical to /demo so the viewer renders without changes.
+    Expected payload: ``{ "frames": [ ... ] }`` with objects matching the
+    /demo WebSocket frame schema. The viewer renders them unchanged.
 
     Query params:
       file      — relative path to the captured frames JSON
@@ -1227,8 +1227,8 @@ async def demo_replay(
 async def list_replays() -> dict:
     """Index any captured-episode JSONs reachable under the search dirs.
 
-    Helpful for the demo video workflow: lets you confirm a replay file
-    is visible to the server before opening /viewer?replay=...
+    Use this to confirm a replay file is visible to the server before
+    opening ``/viewer?replay=...``.
     """
     import os as _os
     found: list[dict] = []
@@ -1254,7 +1254,7 @@ async def viewer() -> HTMLResponse:
 
     The page connects to /demo (live heuristic) by default. When a
     ?replay=<path> query param is present, it streams via /demo_replay
-    instead, replaying a JSON captured by capture_replay.py.
+    instead, from a JSON file with the same per-frame shape as /demo.
     """
     return HTMLResponse(content=_VIEWER_HTML)
 

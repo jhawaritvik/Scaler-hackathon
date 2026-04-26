@@ -119,10 +119,12 @@ On the current audit, the exploit-like policies stay below the sane heuristic po
 ## Training the Commander
 
 For training, I used `Qwen/Qwen3-4B-Instruct-2507` with LoRA / QLoRA and GRPO. The
-**submission** is trained on a **20-iteration** compressed schedule
-(`deadline_v2_a10g` in the HF training notebook, see below); the checked-in
-`train_grpo.py` defaults to **60** iterations for a longer “full” run I did
-not have time to complete for the hackathon.
+path I used is the
+[Hugging Face training notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb)
+(four code cells). **Cell 4** runs a **20-iteration** `deadline_v2_a10g`
+`Config` (compressed curriculum, tuned for a single A10G), not the **60-iteration**
+default in `train_grpo.py`. See the notebook and `grpo_wildfire/config.json`
+for exact hyperparameters.
 
 The model has to output structured JSON actions. To make that less fragile, I used grammar-constrained decoding. The training curriculum moves from easy to medium to hard incidents.
 
@@ -169,47 +171,20 @@ The cost is real. A 4B model on a single A10G is slower per training step. I mad
 
 I want to be specific about this, because it shapes what you should and should not read into the eval numbers.
 
-The default training configuration in this repository is sixty GRPO iterations with a curriculum of easy `0-10`, medium `10-25`, hard `25-60`, four-rollout groups, and two base seeds per iteration. That is the configuration the environment was tuned for.
+The Hugging Face notebook run uses **Cell 4** = **`deadline_v2_a10g`**: **20
+GRPO iterations** with a compressed curriculum (easy / medium / hard stage
+lengths in the notebook) and the knobs there (`group_size=4`, `seeds_per_iter=2`,
+`micro_batch_size=2`, etc.). That is a shorter schedule than the **60-iteration**
+default in `train_grpo.py` (roughly 240 episode slots in the default math).
 
-The configuration I actually ran for the deadline submission was a compressed version:
+The checked-in `train_grpo.py` default is still the longer “full” configuration
+I would run with more wall-clock. For the hackathon run, the source of truth is
+`grpo_wildfire/config.json` and `grpo_wildfire/log.jsonl` on disk, not this blog.
 
-```
-total_iterations = 20
-curriculum       = ("easy", 0, 5), ("medium", 5, 12), ("hard", 12, 20)
-group_size       = 2
-seeds_per_iter   = 1
-warmup_iters     = 3
-save_every       = 6
-run_name         = "deadline_v2_a10g"
-```
+### What that training budget buys you
 
-I ran that job to completion: **20 GRPO iterations** on this schedule (unlike
-the 60-iteration default in `train_grpo.py`, which I did not have wall-clock
-budget to finish in time for the hackathon). The adapter shipped with
-`eval_policy_http.py` / `grpo_wildfire/final_adapter` comes from this run.
-
-Concretely, compared to the default `Config` in the repo, this run uses:
-
-- **20** total iterations, not 60.
-- **Half** the rollouts per iteration (`group_size` 2 vs 4).
-- **Half** the base seeds per iteration (`seeds_per_iter` 1 vs 2), so
-  within-group advantage statistics are noisier than the default setup.
-- Curriculum split: easy iters 0-4, medium 5-11, **hard 12-19** (eight
-  hard-task iterations, not the full 35 hard iters the default 60-iter
-  schedule would have allowed).
-
-When you read `submission_artifacts/eval_trained.json`, the trained-versus
-untrained gap is therefore from a **short** GRPO run on a 4B model, not
-from a long production training job.
-
-If you are auditing the run, cross-check: `grpo_wildfire/log.jsonl` (last
-`iter` line), or `grpo_wildfire/adapter_iter0020/`, and `grpo_wildfire/
-resume_state.json` / `run_status.json` for `last_completed_iter` and
-`total_iterations=20` — the numbers in those files are the source of truth.
-
-### What 20 iterations buys you
-
-Twenty iterations of GRPO is enough to move the policy. It is not enough to claim mastery.
+Twenty iterations of GRPO on a 4B model is a real slice of training, not a
+one-step smoke test, but it is still not “solve wildfire” scale.
 
 The trained model is better than the untrained model. It uses more of the fleet, plans further ahead, and avoids more of the obviously bad moves. It is still beaten on some seeds by the hand-written heuristic baseline that has years of operational logic written into it line by line.
 
@@ -219,7 +194,7 @@ I think that comparison is the right one to look at. The interesting question fo
 
 If I had another two days of A10G time, the order of priority would be:
 
-1. Just run the default sixty-iteration configuration end to end, with the original `group_size=4`, `seeds_per_iter=2`, and full curriculum. That alone would give the hard stage twenty-plus iterations instead of three.
+1. Run the default **60-iteration** `train_grpo.py` configuration end to end, or continue past 20 iters, so the hard stage gets more of the total budget. A larger held-out seed bank would also stress-test generalization more honestly.
 2. Behavior cloning the heuristic baseline first, then GRPO on top. That gives the model a strong prior on the constraint structure and lets RL focus purely on tactics.
 3. Curriculum stages with explicit fog-of-war and weather-shift mini-episodes, so the model is forced to handle each pressure in isolation before they all combine.
 4. A larger held-out set, ideally 25-50 seeds per task, so the trained-versus-baseline gap can be reported with proper confidence intervals.
@@ -279,6 +254,7 @@ The Space is where the environment lives, so it makes sense for the story, code,
 
 - Live Space: https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env
 - Live app: https://chunchunmaru-101-wildfire-env.hf.space
+- Training notebook (Space): https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_training_eval_hf.ipynb
 - Repository README (full technical writeup, references, repo layout): ./README.md
 - Training pipeline: ./train_grpo.py
 - OpenEnv evaluator: ./eval_policy_http.py

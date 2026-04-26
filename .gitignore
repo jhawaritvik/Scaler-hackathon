@@ -8,7 +8,10 @@ venv/
 *.egg-info/
 baseline_scores.json
 smoke_test_output/
-grpo_wildfire/
+# Training run dir: ignore heavy checkpoints; track only the text log (see git docs: unignore file in ignored dir)
+grpo_wildfire/**
+!grpo_wildfire/
+!grpo_wildfire/log.jsonl
 unsloth_compiled_cache/
 docs/
 
