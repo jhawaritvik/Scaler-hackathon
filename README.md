@@ -106,7 +106,7 @@ the obvious shortcut policies fail.
 - GPU preflight ([`smoke_test.py`](./smoke_test.py)) — 1-iteration tiny GRPO run to validate the training stack before a full curriculum
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-class flagging
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) — turns `log.jsonl` into judge-friendly SVG/PNG reward/loss curves with no extra plotting dependency
-- Hugging Face notebooks: [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb) (four code cells: GRPO **Cell 4** = 20-iter `deadline_v2_a10g`; [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)) and [`notebooks/wildfire_eval_plots_hf.ipynb`](./notebooks/wildfire_eval_plots_hf.ipynb) (OpenEnv HTTP eval + plots/artifacts)
+- Hugging Face notebooks: [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb) (four code cells: GRPO **Cell 4** = 20-iter `deadline_v2_a10g`; [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)) and [`notebooks/wildfire_eval_plots_hf.ipynb`](./notebooks/wildfire_eval_plots_hf.ipynb) (Cells 1-2: same secrets/clone as training; then OpenEnv eval, plots, and `submission_artifacts/`)
 
 ---
 
