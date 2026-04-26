@@ -2,7 +2,7 @@
 """Evaluate a wildfire policy through the official OpenEnv API.
 
 Despite the legacy filename (``eval_policy_http.py`` is referenced in the
-README, notebooks, and ``submission_check.py``), this evaluator uses the
+README and notebooks), this evaluator uses the
 official OpenEnv ``EnvClient`` over a *persistent WebSocket session*:
 
     POST  /grader   (raw HTTP — wildfire-specific endpoint, not part of OpenEnv)

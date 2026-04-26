@@ -65,7 +65,7 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - **Training pipeline:** [`train_grpo.py`](./train_grpo.py) — primary GPU path is the [Space-hosted training notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb) (kept in sync with [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb))
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) — 84 fixed-seed episodes (7 policies × 4 seeds per task × 3 tasks; seed list in `DEFAULT_AUDIT_SEED_BANK`, not the GRPO `seeds_per_task` pool), no exploit-class policy flagged
 - **OpenEnv showcase eval:** [`eval_policy_http.py`](./eval_policy_http.py) drives both untrained and trained policies via the official OpenEnv `EnvClient` WebSocket session (`reset`/`step` on `/ws`) plus the wildfire `POST /grader` HTTP endpoint
-- **Submission artifact helpers:** [`plot_training_curves.py`](./plot_training_curves.py) and [`submission_check.py`](./submission_check.py)
+- **Submission artifact helper:** [`plot_training_curves.py`](./plot_training_curves.py) (or `eval_policy_http.py --plot-training` after the trained run)
 - **Writeup:** [`Blog.MD`](./Blog.MD) — the separate judge-facing blog file requested for the Hugging Face Space
 - **Submission artifacts after a real GPU run:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png), [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png), [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json), [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json), [`submission_artifacts/training_summary.md`](./submission_artifacts/training_summary.md)
 
@@ -106,7 +106,6 @@ the obvious shortcut policies fail.
 - GPU preflight ([`smoke_test.py`](./smoke_test.py)) — 1-iteration tiny GRPO run to validate the training stack before a full curriculum
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-class flagging
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) — turns `log.jsonl` into judge-friendly SVG/PNG reward/loss curves with no extra plotting dependency
-- Submission readiness checker ([`submission_check.py`](./submission_check.py)) for the final hackathon packaging pass
 - Hugging Face notebooks: [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb) (four code cells: GRPO **Cell 4** = 20-iter `deadline_v2_a10g`; [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)) and [`notebooks/wildfire_eval_plots_hf.ipynb`](./notebooks/wildfire_eval_plots_hf.ipynb) (OpenEnv HTTP eval + plots/artifacts)
 
 ---
@@ -624,8 +623,9 @@ Once you have GPU access, this is the clean path to a final submission package:
 .\.venv\Scripts\python.exe train_grpo.py
 .\.venv\Scripts\python.exe eval_policy_http.py --untrained --base-url https://chunchunmaru-101-wildfire-env.hf.space --seeds-per-task 5 --output submission_artifacts/eval_untrained.json
 .\.venv\Scripts\python.exe eval_policy_http.py --base-url https://chunchunmaru-101-wildfire-env.hf.space --seeds-per-task 5 --output submission_artifacts/eval_trained.json --plot-training
-.\.venv\Scripts\python.exe submission_check.py --strict
 ```
+
+Then commit `submission_artifacts/`, `reward_audit.json`, and any doc updates, and push.
 
 `--plot-training` on the trained run writes the same `training_*.png/.svg` and
 `training_summary.md` as [`plot_training_curves.py`](./plot_training_curves.py)
@@ -702,7 +702,6 @@ Same held-out seeds per task, [`eval_policy_http.py`](./eval_policy_http.py) on 
 - `smoke_test.py` — optional 1-iter GRPO preflight (GPU)
 - `reward_audit.py` — reward-hacking audit harness
 - `plot_training_curves.py` — SVG/PNG reward/loss plot generator for `log.jsonl`
-- `submission_check.py` — final packaging checker for hackathon submission
 - `submission_artifacts/` — generated training plots, eval JSONs, final evidence
 - `replays/` — optional frame JSONs for the `/viewer?replay=…` + `/demo_replay` path
 - `notebooks/wildfire_grpo_train_hf.ipynb` — Hugging Face GPU training (same as [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb))

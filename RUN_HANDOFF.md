@@ -17,8 +17,7 @@ Submit the Wildfire OpenEnv hackathon project before the deadline with:
 - a lean repo containing only the final submission path
 
 `eval_policy_http.py` (legacy filename, now WebSocket-based) is the single
-evaluator. The filename is preserved so README/notebook/`submission_check.py`
-references keep working. A thin `eval_policy.py` forwards to it for
+evaluator. The filename is preserved for README/notebook references. A thin `eval_policy.py` forwards to it for
 [`wildfire_eval_plots_hf.ipynb`](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_eval_plots_hf.ipynb) (subprocess to `eval_policy_http.py`).
 
 **Canonical training path:** the Space and local
@@ -74,7 +73,7 @@ This commit:
 - removed `record_qwen_run.py`
 - removed old Kaggle notebook
 - removed tests/fixtures
-- updated `README.md`, `submission_check.py`, and docs for OpenEnv eval
+- updated `README.md` and docs for OpenEnv eval
 
 Later local-only cleanup was performed but not necessarily pushed yet:
 
@@ -281,7 +280,7 @@ api.upload_folder(
 
 ## Final Required Artifacts
 
-`submission_check.py` currently expects:
+The submission should include:
 
 - `reward_audit.json`
 - `submission_artifacts/training_reward_curve.png`
@@ -300,12 +299,6 @@ Run reward audit locally if not already done:
 
 ```bash
 .\.venv\Scripts\python.exe reward_audit.py --json-out reward_audit.json
-```
-
-Final check:
-
-```bash
-python submission_check.py --strict
 ```
 
 ## Final Submission Additions
@@ -333,7 +326,7 @@ Before the final hackathon submission, add or verify these items:
      - `submission_artifacts/training_reward_curve.png`
      - `submission_artifacts/training_loss_curve.png`
    - Embed both images in the README with one-line captions.
-   - The checker only enforces embedding after the files exist.
+   - Commit the image files so README embeds resolve on GitHub and the Space.
 
 4. Reward audit artifact
    - Generate and commit `reward_audit.json`.
@@ -368,12 +361,7 @@ Before the final hackathon submission, add or verify these items:
    - The final submitted URL should be the HF Space URL.
 
 8. Final repository state
-   - Run:
-     ```bash
-     python submission_check.py --strict
-     git status --short
-     ```
-   - Commit only final source/docs/artifacts.
+   - Run `git status --short` and commit only final source/docs/artifacts.
    - Avoid committing caches, `grpo_wildfire/`, `.venv/`, notebooks with huge
      cell outputs, or large video files.
 
