@@ -80,7 +80,7 @@ def load_model_for_eval(adapter_path: str | None, config: Config, device: torch.
     print(f"Loading base model {config.model_name} ...")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model_name,
-        max_seq_length=3072,
+        max_seq_length=4096,
         dtype=None,
         load_in_4bit=True,
         fast_inference=False,
@@ -163,7 +163,7 @@ def _generate_action(
             top_p=config.rollout_top_p,
             top_k=config.rollout_top_k,
             do_sample=True,
-            use_cache=False,
+            use_cache=True,
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
@@ -480,8 +480,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=None,
-        help="Override generation length for evaluation.",
+        default=1024,
+        help=(
+            "Generation length for evaluation. Default 1024 — required to fit "
+            "the trained policy's action JSON (plan + 1-3 assignments). The "
+            "trained adapter naturally produces ~240-300 tokens; lower budgets "
+            "truncate mid-JSON and fail to parse, biasing scores against the "
+            "trained policy."
+        ),
     )
     parser.add_argument(
         "--max-episode-steps",

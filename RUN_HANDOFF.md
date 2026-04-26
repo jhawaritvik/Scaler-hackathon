@@ -54,7 +54,7 @@ goes through the deployed Space.
 
 Committed and pushed:
 
-- `3a62d30 Use HTTP evaluator for final showcase`
+- `3a62d30 Use OpenEnv evaluator for final showcase`
 
 This commit:
 
@@ -65,7 +65,7 @@ This commit:
 - removed `record_qwen_run.py`
 - removed old Kaggle notebook
 - removed tests/fixtures
-- updated `README.md`, `submission_check.py`, and docs for HTTP eval
+- updated `README.md`, `submission_check.py`, and docs for OpenEnv eval
 
 Later local-only cleanup was performed but not necessarily pushed yet:
 
@@ -121,7 +121,7 @@ Recommendation from the chat:
 - keep running through at least one more hard iteration (`iter 14`)
 - if time/cost is tight, stop after iter 14 or 15
 - upload checkpoints
-- run final artifact generation and HTTP eval
+- run final artifact generation and OpenEnv eval
 
 Do not wait so long that there is no time for final eval. The project is judged
 heavily on environment/story and observable training evidence, not perfect model
@@ -136,8 +136,18 @@ Recommended settings (5 held-out seeds × 3 tasks = 15 episodes; lets each
 episode run to the env's own `max_steps` so delayed ignitions actually fire):
 
 ```bash
---seeds-per-task 5 --max-new-tokens 128
+--seeds-per-task 5
 ```
+
+`--max-new-tokens` now defaults to **1024** in the eval CLI. The trained policy
+naturally produces ~240-300 tokens of action JSON; lower budgets truncate
+mid-`assignments` and bias scores against the trained model. Do not override
+unless you know what you're doing.
+
+`use_cache=True` is enabled in `eval_policy_http.py:_generate_action`, validated
+by `_tmp_cache_smoke.py` to give 16/16 parse rate across diverse step depths
+(easy seed=11 at steps 0/2/4/6, hard seed=9 at steps 2/3/6/10) at ~16.6 tok/s
+— roughly 5× faster than `use_cache=False` while producing equivalent JSON.
 
 > Do **not** pass `--max-episode-steps 10`. That cap was a previous-session
 > mistake; with delayed ignitions firing at obs-steps 5-9, a 10-step cap
@@ -155,7 +165,6 @@ mean.
 python eval_policy_http.py --untrained \
   --base-url https://chunchunmaru-101-wildfire-env.hf.space \
   --seeds-per-task 5 \
-  --max-new-tokens 128 \
   --output submission_artifacts/eval_untrained.json
 ```
 
@@ -165,7 +174,6 @@ python eval_policy_http.py --untrained \
 python eval_policy_http.py \
   --base-url https://chunchunmaru-101-wildfire-env.hf.space \
   --seeds-per-task 5 \
-  --max-new-tokens 128 \
   --output submission_artifacts/eval_trained.json
 ```
 
@@ -179,15 +187,19 @@ The JSON output should show:
   long-burning seeds, or terminate earlier with `done: true`. If `steps == 1`
   on every episode, the WebSocket session broke — fall back to a fresh `git
   pull` and rerun.
+- `valid_action_rate` should be ≥ 0.95 on both arms with the new 1024-token
+  default. If you see < 0.9, re-check `--max-new-tokens` was not overridden.
 
 ### Wall-clock estimate
 
-15 episodes × ~20 steps × ~3-5 s/step (LLM gen + WS round-trip) ≈ 15-25 min
-per run on an A10G. Untrained and trained back-to-back: budget ~50 min.
+With `use_cache=True` and 1024-token budget, generation runs at ~16.6 tok/s
+on A10G (~16 s/call avg for 240-280 tok outputs). 15 episodes × ~16-20 steps
+(many end early on `done=True`) × ~16 s/step ≈ **60-95 min per run** on A10G.
+Untrained and trained back-to-back: budget **~2 to 3 hours**.
 
 ## Kaggle Baseline Attempt
 
-Kaggle was used for untrained HTTP baseline. The old direct evaluator was stopped.
+Kaggle was used for the untrained OpenEnv baseline. The old direct evaluator was stopped.
 
 Kaggle dual-GPU command supports two T4s by episode sharding, not model sharding:
 
@@ -196,7 +208,6 @@ python eval_policy_http.py --untrained \
   --base-url https://chunchunmaru-101-wildfire-env.hf.space \
   --parallel-devices 0,1 \
   --seeds-per-task 5 \
-  --max-new-tokens 128 \
   --output submission_artifacts/eval_untrained.json
 ```
 
@@ -225,8 +236,8 @@ Suggested order:
 1. Upload `grpo_wildfire/` checkpoints to HF model repo.
 2. `git pull --rebase origin main` in HF runtime.
 3. Run `plot_training_curves.py`.
-4. Run untrained HTTP eval if not already available from Kaggle.
-5. Run trained HTTP eval.
+4. Run untrained OpenEnv eval if not already available from Kaggle.
+5. Run trained OpenEnv eval.
 6. Inspect artifacts.
 7. Commit/push artifacts.
 8. Stop/pause HF Space runtime.
@@ -285,16 +296,13 @@ python submission_check.py --strict
 Before the final hackathon submission, add or verify these items:
 
 1. Public writeup/demo link in `README.md`
-   - Replace the current placeholder line:
-     `add the final public blog, YouTube, or slide deck URL here before submission`
-   - Acceptable formats:
-     - Hugging Face blog/post
-     - YouTube demo under 2 minutes
-     - public slide deck
-   - The README must link it directly so judges do not have to ask.
+   - Verify the README links the separate `Blog.MD` file requested for the
+     Hugging Face Space.
+   - If a YouTube demo is created, link it directly from the README so judges
+     do not have to ask.
 
 2. Results table in `README.md`
-   - Add a concise trained-vs-untrained HTTP eval table after both JSON files exist.
+   - Add a concise trained-vs-untrained OpenEnv eval table after both JSON files exist.
    - Use `submission_artifacts/eval_untrained.json` and
      `submission_artifacts/eval_trained.json`.
    - Suggested table columns:
@@ -322,8 +330,9 @@ Before the final hackathon submission, add or verify these items:
      - `submission_artifacts/eval_untrained.json`
      - `submission_artifacts/eval_trained.json`
    - Ensure both use the same flags. Recommended:
-     `--seeds-per-task 5 --max-new-tokens 128`
-     (no `--max-episode-steps` override; let the env's own `max_steps` win).
+     `--seeds-per-task 5` (CLI defaults `--max-new-tokens 1024` and
+     `use_cache=True` after the cache-fix patch — do not override either).
+     No `--max-episode-steps` override; let the env's own `max_steps` win.
    - In the README, be explicit that the final showcase evaluation uses the
      OpenEnv `EnvClient` WebSocket session on the live Space, plus the
      wildfire-specific `POST /grader` for scoring.
@@ -361,7 +370,7 @@ Before the final hackathon submission, add or verify these items:
 
 - Do not commit `grpo_wildfire/`; upload checkpoints to HF model repo instead.
 - Commit generated JSON/PNG/summary artifacts.
-- Replace the README placeholder for final blog/video/slides URL before submission.
+- Verify the README links `Blog.MD`; add a YouTube link only if a demo video exists.
 - The model may not obviously improve in noisy training logs; final proof is
   same-seed OpenEnv WebSocket eval comparing untrained vs trained under
   identical flags.
