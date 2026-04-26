@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="714" viewBox="0 0 920 714">
+<rect width="920" height="714" fill="#f8fafc" />
+<text x="32" y="30" font-size="20" font-weight="700" fill="#0f172a">Wildfire GRPO Optimisation Curves</text>
+<text x="32" y="48" font-size="11" fill="#475569">Generated from train_grpo.py JSONL logs by plot_training_curves.py</text>
+<text x="84" y="68" font-size="14" font-weight="700" fill="#0f172a">Policy Loss</text>
+<rect x="84.00" y="82" width="188.24" height="166" fill="#d9f99d" fill-opacity="0.25" />
+<rect x="319.29" y="82" width="282.35" height="166" fill="#fde68a" fill-opacity="0.25" />
+<rect x="648.71" y="82" width="235.29" height="166" fill="#fecaca" fill-opacity="0.25" />
+<rect x="84" y="82" width="800" height="166" fill="white" stroke="#cbd5e1" />
+<line x1="84" y1="82.00" x2="884" y2="82.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="86.00" text-anchor="end" font-size="10" fill="#475569">15.411</text>
+<line x1="84" y1="123.50" x2="884" y2="123.50" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="127.50" text-anchor="end" font-size="10" fill="#475569">11.217</text>
+<line x1="84" y1="165.00" x2="884" y2="165.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="169.00" text-anchor="end" font-size="10" fill="#475569">7.024</text>
+<line x1="84" y1="206.50" x2="884" y2="206.50" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="210.50" text-anchor="end" font-size="10" fill="#475569">2.831</text>
+<line x1="84" y1="248.00" x2="884" y2="248.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="252.00" text-anchor="end" font-size="10" fill="#475569">-1.363</text>
+<line x1="84.00" y1="248" x2="84.00" y2="253" stroke="#94a3b8" />
+<line x1="131.06" y1="248" x2="131.06" y2="253" stroke="#94a3b8" />
+<line x1="178.12" y1="248" x2="178.12" y2="253" stroke="#94a3b8" />
+<line x1="225.18" y1="248" x2="225.18" y2="253" stroke="#94a3b8" />
+<line x1="272.24" y1="248" x2="272.24" y2="253" stroke="#94a3b8" />
+<line x1="319.29" y1="248" x2="319.29" y2="253" stroke="#94a3b8" />
+<line x1="366.35" y1="248" x2="366.35" y2="253" stroke="#94a3b8" />
+<line x1="413.41" y1="248" x2="413.41" y2="253" stroke="#94a3b8" />
+<line x1="460.47" y1="248" x2="460.47" y2="253" stroke="#94a3b8" />
+<line x1="507.53" y1="248" x2="507.53" y2="253" stroke="#94a3b8" />
+<line x1="554.59" y1="248" x2="554.59" y2="253" stroke="#94a3b8" />
+<line x1="601.65" y1="248" x2="601.65" y2="253" stroke="#94a3b8" />
+<line x1="648.71" y1="248" x2="648.71" y2="253" stroke="#94a3b8" />
+<line x1="695.76" y1="248" x2="695.76" y2="253" stroke="#94a3b8" />
+<line x1="742.82" y1="248" x2="742.82" y2="253" stroke="#94a3b8" />
+<line x1="789.88" y1="248" x2="789.88" y2="253" stroke="#94a3b8" />
+<line x1="836.94" y1="248" x2="836.94" y2="253" stroke="#94a3b8" />
+<line x1="884.00" y1="248" x2="884.00" y2="253" stroke="#94a3b8" />
+<polyline points="84.00,204.79 131.06,174.64 178.12,95.83 225.18,233.93 272.24,234.10 319.29,234.17 366.35,234.00 413.41,233.68 460.47,233.86 507.53,234.04 554.59,234.09 601.65,234.02 648.71,233.94 695.76,233.73 742.82,233.63 789.88,233.81 836.94,233.94 884.00,232.68" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="84.00" cy="204.79" r="2.5" fill="#dc2626" />
+<circle cx="131.06" cy="174.64" r="2.5" fill="#dc2626" />
+<circle cx="178.12" cy="95.83" r="2.5" fill="#dc2626" />
+<circle cx="225.18" cy="233.93" r="2.5" fill="#dc2626" />
+<circle cx="272.24" cy="234.10" r="2.5" fill="#dc2626" />
+<circle cx="319.29" cy="234.17" r="2.5" fill="#dc2626" />
+<circle cx="366.35" cy="234.00" r="2.5" fill="#dc2626" />
+<circle cx="413.41" cy="233.68" r="2.5" fill="#dc2626" />
+<circle cx="460.47" cy="233.86" r="2.5" fill="#dc2626" />
+<circle cx="507.53" cy="234.04" r="2.5" fill="#dc2626" />
+<circle cx="554.59" cy="234.09" r="2.5" fill="#dc2626" />
+<circle cx="601.65" cy="234.02" r="2.5" fill="#dc2626" />
+<circle cx="648.71" cy="233.94" r="2.5" fill="#dc2626" />
+<circle cx="695.76" cy="233.73" r="2.5" fill="#dc2626" />
+<circle cx="742.82" cy="233.63" r="2.5" fill="#dc2626" />
+<circle cx="789.88" cy="233.81" r="2.5" fill="#dc2626" />
+<circle cx="836.94" cy="233.94" r="2.5" fill="#dc2626" />
+<circle cx="884.00" cy="232.68" r="2.5" fill="#dc2626" />
+<text x="484.00" y="272" text-anchor="middle" font-size="11" fill="#475569">training iteration</text>
+<rect x="724" y="56" width="152" height="18" fill="white" stroke="#e2e8f0" rx="4" />
+<rect x="732" y="61" width="10" height="8" fill="#d9f99d" />
+<text x="746" y="68" font-size="10" fill="#334155">easy</text>
+<rect x="780" y="61" width="10" height="8" fill="#fde68a" />
+<text x="794" y="68" font-size="10" fill="#334155">medium</text>
+<rect x="828" y="61" width="10" height="8" fill="#fecaca" />
+<text x="842" y="68" font-size="10" fill="#334155">hard</text>
+<text x="84" y="288" font-size="14" font-weight="700" fill="#0f172a">KL Divergence</text>
+<rect x="84.00" y="302" width="188.24" height="166" fill="#d9f99d" fill-opacity="0.25" />
+<rect x="319.29" y="302" width="282.35" height="166" fill="#fde68a" fill-opacity="0.25" />
+<rect x="648.71" y="302" width="235.29" height="166" fill="#fecaca" fill-opacity="0.25" />
+<rect x="84" y="302" width="800" height="166" fill="white" stroke="#cbd5e1" />
+<line x1="84" y1="302.00" x2="884" y2="302.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="306.00" text-anchor="end" font-size="10" fill="#475569">0.016</text>
+<line x1="84" y1="343.50" x2="884" y2="343.50" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="347.50" text-anchor="end" font-size="10" fill="#475569">0.012</text>
+<line x1="84" y1="385.00" x2="884" y2="385.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="389.00" text-anchor="end" font-size="10" fill="#475569">0.008</text>
+<line x1="84" y1="426.50" x2="884" y2="426.50" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="430.50" text-anchor="end" font-size="10" fill="#475569">0.004</text>
+<line x1="84" y1="468.00" x2="884" y2="468.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="472.00" text-anchor="end" font-size="10" fill="#475569">-0.001</text>
+<line x1="84.00" y1="468" x2="84.00" y2="473" stroke="#94a3b8" />
+<line x1="131.06" y1="468" x2="131.06" y2="473" stroke="#94a3b8" />
+<line x1="178.12" y1="468" x2="178.12" y2="473" stroke="#94a3b8" />
+<line x1="225.18" y1="468" x2="225.18" y2="473" stroke="#94a3b8" />
+<line x1="272.24" y1="468" x2="272.24" y2="473" stroke="#94a3b8" />
+<line x1="319.29" y1="468" x2="319.29" y2="473" stroke="#94a3b8" />
+<line x1="366.35" y1="468" x2="366.35" y2="473" stroke="#94a3b8" />
+<line x1="413.41" y1="468" x2="413.41" y2="473" stroke="#94a3b8" />
+<line x1="460.47" y1="468" x2="460.47" y2="473" stroke="#94a3b8" />
+<line x1="507.53" y1="468" x2="507.53" y2="473" stroke="#94a3b8" />
+<line x1="554.59" y1="468" x2="554.59" y2="473" stroke="#94a3b8" />
+<line x1="601.65" y1="468" x2="601.65" y2="473" stroke="#94a3b8" />
+<line x1="648.71" y1="468" x2="648.71" y2="473" stroke="#94a3b8" />
+<line x1="695.76" y1="468" x2="695.76" y2="473" stroke="#94a3b8" />
+<line x1="742.82" y1="468" x2="742.82" y2="473" stroke="#94a3b8" />
+<line x1="789.88" y1="468" x2="789.88" y2="473" stroke="#94a3b8" />
+<line x1="836.94" y1="468" x2="836.94" y2="473" stroke="#94a3b8" />
+<line x1="884.00" y1="468" x2="884.00" y2="473" stroke="#94a3b8" />
+<polyline points="84.00,454.17 131.06,452.69 178.12,433.93 225.18,397.19 272.24,373.17 319.29,387.02 366.35,397.64 413.41,385.76 460.47,388.70 507.53,379.01 554.59,372.39 601.65,399.90 648.71,366.42 695.76,391.39 742.82,315.83 789.88,371.88 836.94,394.48 884.00,360.49" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="84.00" cy="454.17" r="2.5" fill="#7c3aed" />
+<circle cx="131.06" cy="452.69" r="2.5" fill="#7c3aed" />
+<circle cx="178.12" cy="433.93" r="2.5" fill="#7c3aed" />
+<circle cx="225.18" cy="397.19" r="2.5" fill="#7c3aed" />
+<circle cx="272.24" cy="373.17" r="2.5" fill="#7c3aed" />
+<circle cx="319.29" cy="387.02" r="2.5" fill="#7c3aed" />
+<circle cx="366.35" cy="397.64" r="2.5" fill="#7c3aed" />
+<circle cx="413.41" cy="385.76" r="2.5" fill="#7c3aed" />
+<circle cx="460.47" cy="388.70" r="2.5" fill="#7c3aed" />
+<circle cx="507.53" cy="379.01" r="2.5" fill="#7c3aed" />
+<circle cx="554.59" cy="372.39" r="2.5" fill="#7c3aed" />
+<circle cx="601.65" cy="399.90" r="2.5" fill="#7c3aed" />
+<circle cx="648.71" cy="366.42" r="2.5" fill="#7c3aed" />
+<circle cx="695.76" cy="391.39" r="2.5" fill="#7c3aed" />
+<circle cx="742.82" cy="315.83" r="2.5" fill="#7c3aed" />
+<circle cx="789.88" cy="371.88" r="2.5" fill="#7c3aed" />
+<circle cx="836.94" cy="394.48" r="2.5" fill="#7c3aed" />
+<circle cx="884.00" cy="360.49" r="2.5" fill="#7c3aed" />
+<text x="484.00" y="492" text-anchor="middle" font-size="11" fill="#475569">training iteration</text>
+<rect x="724" y="276" width="152" height="18" fill="white" stroke="#e2e8f0" rx="4" />
+<rect x="732" y="281" width="10" height="8" fill="#d9f99d" />
+<text x="746" y="288" font-size="10" fill="#334155">easy</text>
+<rect x="780" y="281" width="10" height="8" fill="#fde68a" />
+<text x="794" y="288" font-size="10" fill="#334155">medium</text>
+<rect x="828" y="281" width="10" height="8" fill="#fecaca" />
+<text x="842" y="288" font-size="10" fill="#334155">hard</text>
+<text x="84" y="508" font-size="14" font-weight="700" fill="#0f172a">Clip Fraction</text>
+<rect x="84.00" y="522" width="188.24" height="166" fill="#d9f99d" fill-opacity="0.25" />
+<rect x="319.29" y="522" width="282.35" height="166" fill="#fde68a" fill-opacity="0.25" />
+<rect x="648.71" y="522" width="235.29" height="166" fill="#fecaca" fill-opacity="0.25" />
+<rect x="84" y="522" width="800" height="166" fill="white" stroke="#cbd5e1" />
+<line x1="84" y1="522.00" x2="884" y2="522.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="526.00" text-anchor="end" font-size="10" fill="#475569">0.011</text>
+<line x1="84" y1="563.50" x2="884" y2="563.50" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="567.50" text-anchor="end" font-size="10" fill="#475569">0.009</text>
+<line x1="84" y1="605.00" x2="884" y2="605.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="609.00" text-anchor="end" font-size="10" fill="#475569">0.008</text>
+<line x1="84" y1="646.50" x2="884" y2="646.50" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="650.50" text-anchor="end" font-size="10" fill="#475569">0.006</text>
+<line x1="84" y1="688.00" x2="884" y2="688.00" stroke="#e2e8f0" stroke-dasharray="4 4" />
+<text x="72" y="692.00" text-anchor="end" font-size="10" fill="#475569">0.004</text>
+<line x1="84.00" y1="688" x2="84.00" y2="693" stroke="#94a3b8" />
+<line x1="131.06" y1="688" x2="131.06" y2="693" stroke="#94a3b8" />
+<line x1="178.12" y1="688" x2="178.12" y2="693" stroke="#94a3b8" />
+<line x1="225.18" y1="688" x2="225.18" y2="693" stroke="#94a3b8" />
+<line x1="272.24" y1="688" x2="272.24" y2="693" stroke="#94a3b8" />
+<line x1="319.29" y1="688" x2="319.29" y2="693" stroke="#94a3b8" />
+<line x1="366.35" y1="688" x2="366.35" y2="693" stroke="#94a3b8" />
+<line x1="413.41" y1="688" x2="413.41" y2="693" stroke="#94a3b8" />
+<line x1="460.47" y1="688" x2="460.47" y2="693" stroke="#94a3b8" />
+<line x1="507.53" y1="688" x2="507.53" y2="693" stroke="#94a3b8" />
+<line x1="554.59" y1="688" x2="554.59" y2="693" stroke="#94a3b8" />
+<line x1="601.65" y1="688" x2="601.65" y2="693" stroke="#94a3b8" />
+<line x1="648.71" y1="688" x2="648.71" y2="693" stroke="#94a3b8" />
+<line x1="695.76" y1="688" x2="695.76" y2="693" stroke="#94a3b8" />
+<line x1="742.82" y1="688" x2="742.82" y2="693" stroke="#94a3b8" />
+<line x1="789.88" y1="688" x2="789.88" y2="693" stroke="#94a3b8" />
+<line x1="836.94" y1="688" x2="836.94" y2="693" stroke="#94a3b8" />
+<line x1="884.00" y1="688" x2="884.00" y2="693" stroke="#94a3b8" />
+<polyline points="84.00,639.69 131.06,567.53 178.12,634.12 225.18,535.83 272.24,614.18 319.29,559.30 366.35,628.25 413.41,589.38 460.47,636.73 507.53,669.59 554.59,651.56 601.65,674.17 648.71,662.90 695.76,648.51 742.82,616.78 789.88,616.67 836.94,643.46 884.00,587.27" fill="none" stroke="#ea580c" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="84.00" cy="639.69" r="2.5" fill="#ea580c" />
+<circle cx="131.06" cy="567.53" r="2.5" fill="#ea580c" />
+<circle cx="178.12" cy="634.12" r="2.5" fill="#ea580c" />
+<circle cx="225.18" cy="535.83" r="2.5" fill="#ea580c" />
+<circle cx="272.24" cy="614.18" r="2.5" fill="#ea580c" />
+<circle cx="319.29" cy="559.30" r="2.5" fill="#ea580c" />
+<circle cx="366.35" cy="628.25" r="2.5" fill="#ea580c" />
+<circle cx="413.41" cy="589.38" r="2.5" fill="#ea580c" />
+<circle cx="460.47" cy="636.73" r="2.5" fill="#ea580c" />
+<circle cx="507.53" cy="669.59" r="2.5" fill="#ea580c" />
+<circle cx="554.59" cy="651.56" r="2.5" fill="#ea580c" />
+<circle cx="601.65" cy="674.17" r="2.5" fill="#ea580c" />
+<circle cx="648.71" cy="662.90" r="2.5" fill="#ea580c" />
+<circle cx="695.76" cy="648.51" r="2.5" fill="#ea580c" />
+<circle cx="742.82" cy="616.78" r="2.5" fill="#ea580c" />
+<circle cx="789.88" cy="616.67" r="2.5" fill="#ea580c" />
+<circle cx="836.94" cy="643.46" r="2.5" fill="#ea580c" />
+<circle cx="884.00" cy="587.27" r="2.5" fill="#ea580c" />
+<text x="484.00" y="712" text-anchor="middle" font-size="11" fill="#475569">training iteration</text>
+<rect x="724" y="496" width="152" height="18" fill="white" stroke="#e2e8f0" rx="4" />
+<rect x="732" y="501" width="10" height="8" fill="#d9f99d" />
+<text x="746" y="508" font-size="10" fill="#334155">easy</text>
+<rect x="780" y="501" width="10" height="8" fill="#fde68a" />
+<text x="794" y="508" font-size="10" fill="#334155">medium</text>
+<rect x="828" y="501" width="10" height="8" fill="#fecaca" />
+<text x="842" y="508" font-size="10" fill="#334155">hard</text>
+</svg>
