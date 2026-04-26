@@ -175,8 +175,7 @@ def capture_llm(
         if generate_fn is None:
             generate_fn = model.generate
 
-        # KV cache validated for the LoRA + XGrammar + _old_generate combo
-        # via _tmp_cache_smoke.py — same generation path as eval_policy_http.py.
+        # use_cache=True — same generation path as eval_policy_http.py.
         # 5-10× faster than use_cache=False; necessary for an untrained capture
         # to finish in minutes instead of an hour.
         gen_out = generate_fn(

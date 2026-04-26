@@ -475,9 +475,7 @@ def rollout_episode(
         if generate_fn is None:
             generate_fn = model.generate
             
-        # KV cache validated for the LoRA + XGrammar + _old_generate combo
-        # via _tmp_cache_smoke.py across diverse step depths and tasks. Same
-        # generation path as eval_policy_http.py (use_cache=True). The 5-10×
+        # use_cache=True on this path: same as eval_policy_http.py. The 5-10×
         # speedup over use_cache=False makes the rollout phase tractable.
         gen_out = generate_fn(
             prompt_ids_t,

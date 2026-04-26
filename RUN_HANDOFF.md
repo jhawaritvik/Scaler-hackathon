@@ -150,10 +150,10 @@ naturally produces ~240-300 tokens of action JSON; lower budgets truncate
 mid-`assignments` and bias scores against the trained model. Do not override
 unless you know what you're doing.
 
-`use_cache=True` is enabled in `eval_policy_http.py:_generate_action`, validated
-by `_tmp_cache_smoke.py` to give 16/16 parse rate across diverse step depths
-(easy seed=11 at steps 0/2/4/6, hard seed=9 at steps 2/3/6/10) at ~16.6 tok/s
-— roughly 5× faster than `use_cache=False` while producing equivalent JSON.
+`use_cache=True` is enabled in `eval_policy_http.py:_generate_action`
+(`_old_generate` + XGrammar). It was checked on the A10G training runtime with
+`max_new_tokens=1024` for parse parity and ~5× faster generation than
+`use_cache=False` with the 4B+LoRA stack.
 
 > Do **not** pass `--max-episode-steps 10`. That cap was a previous-session
 > mistake; with delayed ignitions firing at obs-steps 5-9, a 10-step cap

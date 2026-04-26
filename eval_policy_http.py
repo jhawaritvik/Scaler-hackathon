@@ -292,11 +292,6 @@ def eval_policy_http(
                 policy_calls = 0
 
                 while not done and obs.step < step_cap:
-                    print(
-                        f"  [DEBUG] policy_call={policy_calls} obs.step={obs.step} "
-                        f"cap={step_cap} max_steps={obs.max_steps} done={done}",
-                        flush=True,
-                    )
                     action, parse_ok, token_count, raw_text = _generate_action(
                         model, tokenizer, compiled_grammar, obs, config, device
                     )
