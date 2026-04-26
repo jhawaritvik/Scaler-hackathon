@@ -148,7 +148,7 @@ def _generate_action(
             top_p=config.rollout_top_p,
             top_k=config.rollout_top_k,
             do_sample=True,
-            use_cache=True,
+            use_cache=False,
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
