@@ -279,7 +279,6 @@ The Space is where the environment lives, so it makes sense for the story, code,
 
 - Live Space: https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env
 - Live app: https://chunchunmaru-101-wildfire-env.hf.space
-- Space README: ./README.md
-- Environment package docs: ./wildfire_env/README.md
+- Repository README (full technical writeup, references, repo layout): ./README.md
 - Training pipeline: ./train_grpo.py
 - OpenEnv evaluator: ./eval_policy_http.py

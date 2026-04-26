@@ -87,7 +87,7 @@ except ImportError:
 
 
 TASK_GOALS = {
-    "easy": "Keep both low-priority structures safe and contain the initial fire early.",
+    "easy": "Keep all low-priority structures safe and contain the initial fire early.",
     "medium": "Protect the mixed-priority structures while balancing suppression and containment.",
     "hard": "Survive a multi-ignition wind-driven incident with scarce resources and high-value assets.",
 }

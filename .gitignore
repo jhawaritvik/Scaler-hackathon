@@ -7,9 +7,9 @@ tmp*/
 venv/
 *.egg-info/
 baseline_scores.json
-_token_budget_check.py
 smoke_test_output/
 grpo_wildfire/
+unsloth_compiled_cache/
 docs/
 
 wildfire_env/.venv/

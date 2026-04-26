@@ -10,7 +10,7 @@ FastAPI application for the Wildfire Env Environment.
 Exposes the standard OpenEnv endpoints plus three submission-required extras:
 
     GET  /tasks     — list tasks, action schema, resource–mission compatibility
-    POST /grader    — grade a completed episode (returns 0.0–1.0 score)
+    POST /grader    — grade a completed episode (returns a score strictly within (0, 1))
     GET  /baseline  — run a deterministic heuristic agent and return scores
 
 Standard OpenEnv endpoints (via create_app):
@@ -183,7 +183,7 @@ def _strict_open_unit_interval(value: float) -> float:
 
 
 def _grade_episode(req: GraderRequest) -> GraderResponse:
-    """Compute a normalised 0.0–1.0 grader score from episode outcome data.
+    """Compute a normalised grader score strictly within (0, 1).
 
     Scoring weights:
       - Structure protection (45%): weighted sum of saved structure priorities
@@ -224,7 +224,7 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
         (terrain.fuel_type != FUEL_NONE) & ~terrain.is_water
     ))
 
-    # ── Structure score (60%) ──
+    # ── Structure score (45%) ──
     lost_statuses = {"burning", "burned", "lost"}
     expected_structures: list[dict] = []
     for index, structure in enumerate(terrain.structures, start=1):
@@ -264,7 +264,7 @@ def _grade_episode(req: GraderRequest) -> GraderResponse:
             saved_priority += expected["priority"]
     structure_score = saved_priority / max(1, total_priority)
 
-    # ── Area preservation score (30%) ──
+    # ── Area preservation score (20%) ──
     cells_damaged = req.burned_cells + req.burning_cells
     area_score = max(0.0, 1.0 - cells_damaged / max(1, total_burnable))
 
@@ -624,7 +624,7 @@ def get_tasks() -> dict:
 
 @app.post("/grader", response_model=GraderResponse)
 def compute_grader(request: GraderRequest = Body(...)) -> GraderResponse:
-    """Grade a completed episode and return a 0.0–1.0 score.
+    """Grade a completed episode and return a score strictly within (0, 1).
 
     POST the final WildfireObservation.structures list together with
     burned_cells and burning_cells counts from the terminal observation.
@@ -639,7 +639,7 @@ def compute_grader(request: GraderRequest = Body(...)) -> GraderResponse:
             {"priority": 1, "status": "safe"},
             {"priority": 1, "status": "safe"}
           ],
-          "burned_cells": 8,
+          "burned_cells": 9,
           "burning_cells": 0
         }
     """
@@ -980,6 +980,8 @@ function renderFrame(data) {
     document.getElementById('score-desc').textContent =
       'Structures: ' + ((comp.structure_component||0)*100).toFixed(1) + '%  |  ' +
       'Area: ' + ((comp.area_component||0)*100).toFixed(1) + '%  |  ' +
+      'Active: ' + ((comp.containment_component||0)*100).toFixed(1) + '%  |  ' +
+      'Spread: ' + ((comp.spread_limit_component||0)*100).toFixed(1) + '%  |  ' +
       'Efficiency: ' + ((comp.efficiency_component||0)*100).toFixed(1) + '%';
     document.getElementById('score-overlay').style.display = 'block';
   }

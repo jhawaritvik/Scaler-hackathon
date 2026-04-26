@@ -41,10 +41,11 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
     required_files = [
         ("OpenEnv manifest", repo_root / "openenv.yaml"),
         ("Training script", repo_root / "train_grpo.py"),
-        ("HTTP showcase evaluation script", repo_root / "eval_policy_http.py"),
+        ("OpenEnv showcase evaluation script", repo_root / "eval_policy_http.py"),
         ("Reward audit", repo_root / "reward_audit.py"),
+        ("Separate Blog.MD writeup", repo_root / "Blog.MD"),
         ("HF training notebook", repo_root / "notebooks" / "wildfire_training_eval_hf.ipynb"),
-        ("HF HTTP eval notebook", repo_root / "notebooks" / "wildfire_http_eval_hf.ipynb"),
+        ("HF OpenEnv eval notebook", repo_root / "notebooks" / "wildfire_http_eval_hf.ipynb"),
     ]
 
     checks = [
@@ -68,16 +69,16 @@ def collect_checks(repo_root: Path, artifacts_dir: Path) -> list[CheckResult]:
     )
     checks.append(
         CheckResult(
-            "README links the HTTP eval notebook",
+            "README links the OpenEnv eval notebook",
             bool(EVAL_NOTEBOOK_PATTERN.search(readme)),
             "found" if EVAL_NOTEBOOK_PATTERN.search(readme) else "link notebooks/wildfire_http_eval_hf.ipynb from README.md",
         )
     )
     checks.append(
         CheckResult(
-            "README links a writeup/video/slides",
-            "to be linked after training completes" not in readme.lower(),
-            "found" if "to be linked after training completes" not in readme.lower() else "replace the placeholder with a public URL",
+            "README links a writeup/demo",
+            "blog.md" in readme.lower(),
+            "found" if "blog.md" in readme.lower() else "link Blog.MD from README.md",
         )
     )
     checks.append(
