@@ -262,7 +262,14 @@ def eval_policy_http(
             token_counts: list[int] = []
             raw_failures: list[str] = []
             started = time.time()
-            while not obs.done and obs.step < config.max_episode_steps:
+            inner_step = 0
+            hard_cap = config.max_episode_steps
+            while not obs.done and obs.step < config.max_episode_steps and inner_step < hard_cap:
+                print(
+                    f"  [DEBUG] inner={inner_step} obs.step={obs.step} "
+                    f"cap={config.max_episode_steps} done={obs.done}",
+                    flush=True,
+                )
                 action, parse_ok, token_count, raw_text = _generate_action(
                     model, tokenizer, compiled_grammar, obs, config, device
                 )
@@ -278,6 +285,7 @@ def eval_policy_http(
                     timeout=timeout,
                 )
                 obs = WildfireObservation.model_validate(step["observation"])
+                inner_step += 1
 
             grade = _grade_final_observation(base_url, obs, seed, timeout=timeout)
             score = float(grade["score"])
