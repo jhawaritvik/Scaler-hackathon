@@ -62,7 +62,7 @@ This submission is a single-agent world-modeling environment with long-horizon p
 
 - **Live Space:** [Chunchunmaru-101/wildfire-env](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env)
 - **Live app:** [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
-- **Training pipeline:** [`train_grpo.py`](./train_grpo.py) — primary GPU path is the [Space-hosted training notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb) (kept in sync with [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb))
+- **Training + eval (GPU) notebook:** [`notebooks/wildfire_train_eval_hf.ipynb`](./notebooks/wildfire_train_eval_hf.ipynb) — [on Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb) (all GRPO, OpenEnv eval, plots, artifacts). The former split notebooks in `notebooks/` are one-cell redirects. Same training logic lives in [`train_grpo.py`](./train_grpo.py) for the CLI
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) — 84 fixed-seed episodes (7 policies × 4 seeds per task × 3 tasks; seed list in `DEFAULT_AUDIT_SEED_BANK`, not the GRPO `seeds_per_task` pool), no exploit-class policy flagged
 - **OpenEnv showcase eval:** [`eval_policy_http.py`](./eval_policy_http.py) drives both untrained and trained policies via the official OpenEnv `EnvClient` WebSocket session (`reset`/`step` on `/ws`) plus the wildfire `POST /grader` HTTP endpoint
 - **Submission artifact helper:** [`plot_training_curves.py`](./plot_training_curves.py) (or `eval_policy_http.py --plot-training` after the trained run)
@@ -106,7 +106,7 @@ the obvious shortcut policies fail.
 - GPU preflight ([`smoke_test.py`](./smoke_test.py)) — 1-iteration tiny GRPO run to validate the training stack before a full curriculum
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-class flagging
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) — turns `log.jsonl` into judge-friendly SVG/PNG reward/loss curves with no extra plotting dependency
-- Hugging Face notebooks: [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb) (four code cells: GRPO **Cell 4** = 20-iter `deadline_v2_a10g`; [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)) and [`notebooks/wildfire_eval_plots_hf.ipynb`](./notebooks/wildfire_eval_plots_hf.ipynb) (Cells 1-2: same secrets/clone as training; then OpenEnv eval, plots, and `submission_artifacts/`)
+- **Hugging Face (single runtime notebook):** [`notebooks/wildfire_train_eval_hf.ipynb`](./notebooks/wildfire_train_eval_hf.ipynb) — secrets + clone (**1–2**), preflight (**3**), GRPO `deadline_v2_a10g` **Cell 4** (20 iters), then OpenEnv untrained/trained eval, plots, exports ([Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb))
 
 ---
 
@@ -497,8 +497,8 @@ in.
 The *default* `Config` in `train_grpo.py` does not. The compute budget
 **for that default** is 60 GRPO iterations × 4 trajectories =
 **240 total episodes** (`python train_grpo.py` with no overrides). The
-[Hugging Face training notebook](./notebooks/wildfire_grpo_train_hf.ipynb)
-uses a **20-iteration** `deadline_v2_a10g` schedule in Cell 4 instead — see
+[Hugging Face runtime notebook](./notebooks/wildfire_train_eval_hf.ipynb)
+uses a **20-iteration** `deadline_v2_a10g` schedule in **Cell 4** — see
 that file and `grpo_wildfire/config.json` after a run.
 
 Stretching 240 episodes across 1000 unique seeds means each scenario is
@@ -534,13 +534,12 @@ concentrating those 240 episodes on 16 representative scenarios is the
 intended way to get a more reliable gradient than spreading the same budget
 across thousands of one-off seeds.
 
-### Training notebook vs `train_grpo.py`
+### Hugging Face notebook vs `train_grpo.py`
 
-The [Hugging Face Space copy](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)
-and [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb)
-should stay in sync. The notebook has **four code cells**; **Cell 4** runs a
+The [Space copy](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb)
+and [`notebooks/wildfire_train_eval_hf.ipynb`](./notebooks/wildfire_train_eval_hf.ipynb) hold the full **training + eval** flow in one file; **Cell 4** runs a
 full **20-iteration** `deadline_v2_a10g` `Config` (compressed curriculum, larger
-`micro_batch_size` on A10G — see the notebook source). For the **60-iteration**
+`micro_batch_size` on A10G). For the **60-iteration**
 default [`Config`](./train_grpo.py), run `python train_grpo.py` from the repo
 root. After any run, `grpo_wildfire/config.json` and `grpo_wildfire/log.jsonl`
 are the source of truth.
@@ -576,8 +575,9 @@ Install training extras with:
 ```
 
 The full training path requires a CUDA GPU. On CPU-only hardware,
-`smoke_test.py` fails fast with a clear error; use the Hugging Face training
-notebook for GPU runs:
+`smoke_test.py` fails fast with a clear error; use
+[`notebooks/wildfire_train_eval_hf.ipynb`](./notebooks/wildfire_train_eval_hf.ipynb) on a Hugging Face GPU
+runtime for the full path:
 
 ```bash
 .\.venv\Scripts\python.exe smoke_test.py   # 1-iter preflight, GPU only
@@ -635,8 +635,8 @@ can run `plot_training_curves.py` separately instead if you prefer.
 > **Note:** `python train_grpo.py` runs the **default 60-iteration** configuration
 > the environment was tuned for. The actual hackathon submission was produced
 > by the **20-iteration `deadline_v2_a10g`** run from Cell 4 of
-> [`notebooks/wildfire_grpo_train_hf.ipynb`](./notebooks/wildfire_grpo_train_hf.ipynb)
-> (see the [public Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)).
+> [`notebooks/wildfire_train_eval_hf.ipynb`](./notebooks/wildfire_train_eval_hf.ipynb)
+> (see the [public Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb)).
 > Reproduce the submitted run with that notebook, not the bare `python train_grpo.py` line
 > above.
 
@@ -704,8 +704,8 @@ Same held-out seeds per task, [`eval_policy_http.py`](./eval_policy_http.py) on 
 - `plot_training_curves.py` — SVG/PNG reward/loss plot generator for `log.jsonl`
 - `submission_artifacts/` — generated training plots, eval JSONs, final evidence
 - `replays/` — optional frame JSONs for the `/viewer?replay=…` + `/demo_replay` path
-- `notebooks/wildfire_grpo_train_hf.ipynb` — Hugging Face GPU training (same as [Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb))
-- `notebooks/wildfire_eval_plots_hf.ipynb` — OpenEnv baseline/trained evaluation and final artifacts
+- `notebooks/wildfire_train_eval_hf.ipynb` — one Hugging Face runtime notebook: training (Cell 4) + OpenEnv eval + plots ([Space](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb))
+- `notebooks/wildfire_grpo_train_hf.ipynb`, `notebooks/wildfire_eval_plots_hf.ipynb` — short redirects to the unified notebook
 - `wildfire_env/` — environment package (server, models, fire simulation, terrain)
 - `Blog.MD` — separate judge-facing writeup for the Hugging Face Space
 

@@ -18,14 +18,15 @@ Submit the Wildfire OpenEnv hackathon project before the deadline with:
 
 `eval_policy_http.py` (legacy filename, now WebSocket-based) is the single
 evaluator. The filename is preserved for README/notebook references. A thin `eval_policy.py` forwards to it for
-[`wildfire_eval_plots_hf.ipynb`](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_eval_plots_hf.ipynb) (subprocess to `eval_policy_http.py`).
+[`wildfire_train_eval_hf.ipynb`](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb) (subprocesses to `eval_policy_http.py`).
 
-**Canonical training path:** the Space and local
-`notebooks/wildfire_grpo_train_hf.ipynb` should match — **four code cells**,
-**Cell 4** = full **20-iter** `deadline_v2_a10g` (see inline `Config` in the
-notebook). **Eval, training-curve plots, and submission artifacts** live only in
-`notebooks/wildfire_eval_plots_hf.ipynb`. `python train_grpo.py` alone is still
-the **60-iter** default. README and `Blog.MD` describe the notebook paths. The
+**Canonical path:** the Space and local
+`notebooks/wildfire_train_eval_hf.ipynb` are one document — **Cell 4** = full
+**20-iter** `deadline_v2_a10g` training; **cells 5+** = OpenEnv eval, plots, and
+`submission_artifacts/`. The older
+`wildfire_grpo_train_hf.ipynb` / `wildfire_eval_plots_hf.ipynb` are one-cell
+redirects. `python train_grpo.py` alone is still the **60-iter** default. README
+and `Blog.MD` point to the unified notebook. The
 long block below is extra **historical** context from mid-run.
 
 ## Live Space

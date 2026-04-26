@@ -120,8 +120,8 @@ On the current audit, the exploit-like policies stay below the sane heuristic po
 
 For training, I used `Qwen/Qwen3-4B-Instruct-2507` with LoRA / QLoRA and GRPO. The
 path I used is the
-[Hugging Face training notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb)
-(four code cells). **Cell 4** runs a **20-iteration** `deadline_v2_a10g`
+[Hugging Face runtime notebook](https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb)
+(all training and eval in one file). **Cell 4** runs a **20-iteration** `deadline_v2_a10g`
 `Config` (compressed curriculum, tuned for a single A10G), not the **60-iteration**
 default in `train_grpo.py`. See the notebook and `grpo_wildfire/config.json`
 for exact hyperparameters.
@@ -254,8 +254,7 @@ The Space is where the environment lives, so it makes sense for the story, code,
 
 - Live Space: https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env
 - Live app: https://chunchunmaru-101-wildfire-env.hf.space
-- Training notebook (Space): https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_grpo_train_hf.ipynb
-- Eval and plots notebook (Space): https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_eval_plots_hf.ipynb
+- Full GPU notebook (training + OpenEnv eval + plots, Space): https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env/blob/main/notebooks/wildfire_train_eval_hf.ipynb
 - Repository README (full technical writeup, references, repo layout): ./README.md
 - Training pipeline: ./train_grpo.py
 - OpenEnv evaluator: ./eval_policy_http.py
