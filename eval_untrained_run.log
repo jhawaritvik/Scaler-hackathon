@@ -1,0 +1,333 @@
+🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
+Unsloth: Your Flash Attention 2 installation seems to be broken. Using Xformers instead. No performance changes will be seen.
+🦥 Unsloth Zoo will now patch everything to make training faster!
+Loading base model Qwen/Qwen3-4B-Instruct-2507 ...
+==((====))==  Unsloth 2026.4.8: Fast Qwen3 patching. Transformers: 5.5.0.
+   \\   /|    NVIDIA A10G. Num GPUs = 1. Max memory: 22.301 GB. Platform: Linux.
+O^O/ \_/ \    Torch: 2.10.0+cu128. CUDA: 8.6. CUDA Toolkit: 12.8. Triton: 3.6.0
+\        /    Bfloat16 = TRUE. FA [Xformers = 0.0.35. FA2 = False]
+ "-____-"     Free license: http://github.com/unslothai/unsloth
+Unsloth: Fast downloading is enabled - ignore downloading bars which are red colored!
+Loading weights:   0%|                                                                                                                                                         | 0/398 [00:00<?, ?it/s]Loading weights:  14%|███████████████████▊                                                                                                                           | 55/398 [00:00<00:00, 541.85it/s]Loading weights:  28%|███████████████████████████████████████▏                                                                                                      | 110/398 [00:00<00:00, 398.47it/s]Loading weights:  45%|████████████████████████████████████████████████████████████████▏                                                                             | 180/398 [00:00<00:00, 509.76it/s]Loading weights:  63%|█████████████████████████████████████████████████████████████████████████████████████████▉                                                    | 252/398 [00:00<00:00, 583.16it/s]Loading weights:  80%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████▏                           | 320/398 [00:00<00:00, 612.41it/s]Loading weights:  97%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▋    | 386/398 [00:00<00:00, 609.60it/s]Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 398/398 [00:00<00:00, 581.29it/s]
+unsloth/qwen3-4b-instruct-2507-unsloth-bnb-4bit does not have a padding token! Will use pad_token = <|PAD_TOKEN|>.
+  No adapter - evaluating base model over OpenEnv WebSocket.
+
+── easy over OpenEnv WebSocket ──
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=  11  grader=0.4191  steps=20/20  parse=20/20  burning=10  burned=132
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=  18  grader=0.7045  steps=20/20  parse=20/20  burning=2  burned=69
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  seed=  25  grader=0.9561  steps= 7/20  parse=7/7  burning=0  burned=1
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=  56  grader=0.5598  steps=20/20  parse=20/20  burning=26  burned=57
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  seed=  76  grader=0.9450  steps=11/20  parse=11/11  burning=0  burned=0
+  easy: mean=0.7169 ± 0.2111
+
+── medium over OpenEnv WebSocket ──
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=   1  grader=0.3353  steps=20/20  parse=20/20  burning=97  burned=183
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=   7  grader=0.2122  steps=20/20  parse=20/20  burning=17  burned=239
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=  28  grader=0.4897  steps=20/20  parse=20/20  burning=26  burned=312
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=  61  grader=0.4906  steps=20/20  parse=20/20  burning=15  burned=296
+  [DEBUG] policy_call=0 obs.step=0 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=1 obs.step=1 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=2 obs.step=2 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=3 obs.step=3 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=4 obs.step=4 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=5 obs.step=5 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=6 obs.step=6 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=7 obs.step=7 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=8 obs.step=8 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=9 obs.step=9 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=10 obs.step=10 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=11 obs.step=11 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=12 obs.step=12 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=13 obs.step=13 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=14 obs.step=14 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=15 obs.step=15 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=16 obs.step=16 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=17 obs.step=17 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=18 obs.step=18 cap=20 max_steps=20 done=False
+  [DEBUG] policy_call=19 obs.step=19 cap=20 max_steps=20 done=False
+  seed=  69  grader=0.3455  steps=20/20  parse=20/20  burning=21  burned=277
+  medium: mean=0.3747 ± 0.1053
+
+── hard over OpenEnv WebSocket ──
+  [DEBUG] policy_call=0 obs.step=2 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=1 obs.step=3 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=2 obs.step=4 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=3 obs.step=5 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=4 obs.step=6 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=5 obs.step=7 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=6 obs.step=8 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=7 obs.step=9 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=8 obs.step=10 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=9 obs.step=11 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=10 obs.step=12 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=11 obs.step=13 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=12 obs.step=14 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=13 obs.step=15 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=14 obs.step=16 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=15 obs.step=17 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=16 obs.step=18 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=17 obs.step=19 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=18 obs.step=20 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=19 obs.step=21 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=20 obs.step=22 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=21 obs.step=23 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=22 obs.step=24 cap=25 max_steps=25 done=False
+  seed=   9  grader=0.4262  steps=25/25  parse=23/23  burning=4  burned=473
+  [DEBUG] policy_call=0 obs.step=2 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=1 obs.step=3 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=2 obs.step=4 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=3 obs.step=5 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=4 obs.step=6 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=5 obs.step=7 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=6 obs.step=8 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=7 obs.step=9 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=8 obs.step=10 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=9 obs.step=11 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=10 obs.step=12 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=11 obs.step=13 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=12 obs.step=14 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=13 obs.step=15 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=14 obs.step=16 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=15 obs.step=17 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=16 obs.step=18 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=17 obs.step=19 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=18 obs.step=20 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=19 obs.step=21 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=20 obs.step=22 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=21 obs.step=23 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=22 obs.step=24 cap=25 max_steps=25 done=False
+  seed=  28  grader=0.4153  steps=25/25  parse=23/23  burning=4  burned=547
+  [DEBUG] policy_call=0 obs.step=2 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=1 obs.step=3 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=2 obs.step=4 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=3 obs.step=5 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=4 obs.step=6 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=5 obs.step=7 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=6 obs.step=8 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=7 obs.step=9 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=8 obs.step=10 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=9 obs.step=11 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=10 obs.step=12 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=11 obs.step=13 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=12 obs.step=14 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=13 obs.step=15 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=14 obs.step=16 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=15 obs.step=17 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=16 obs.step=18 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=17 obs.step=19 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=18 obs.step=20 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=19 obs.step=21 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=20 obs.step=22 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=21 obs.step=23 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=22 obs.step=24 cap=25 max_steps=25 done=False
+  seed=  32  grader=0.3865  steps=25/25  parse=23/23  burning=55  burned=370
+  [DEBUG] policy_call=0 obs.step=2 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=1 obs.step=3 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=2 obs.step=4 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=3 obs.step=5 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=4 obs.step=6 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=5 obs.step=7 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=6 obs.step=8 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=7 obs.step=9 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=8 obs.step=10 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=9 obs.step=11 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=10 obs.step=12 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=11 obs.step=13 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=12 obs.step=14 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=13 obs.step=15 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=14 obs.step=16 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=15 obs.step=17 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=16 obs.step=18 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=17 obs.step=19 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=18 obs.step=20 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=19 obs.step=21 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=20 obs.step=22 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=21 obs.step=23 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=22 obs.step=24 cap=25 max_steps=25 done=False
+  seed=  61  grader=0.2906  steps=25/25  parse=23/23  burning=34  burned=509
+  [DEBUG] policy_call=0 obs.step=2 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=1 obs.step=3 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=2 obs.step=4 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=3 obs.step=5 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=4 obs.step=6 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=5 obs.step=7 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=6 obs.step=8 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=7 obs.step=9 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=8 obs.step=10 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=9 obs.step=11 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=10 obs.step=12 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=11 obs.step=13 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=12 obs.step=14 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=13 obs.step=15 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=14 obs.step=16 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=15 obs.step=17 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=16 obs.step=18 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=17 obs.step=19 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=18 obs.step=20 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=19 obs.step=21 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=20 obs.step=22 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=21 obs.step=23 cap=25 max_steps=25 done=False
+  [DEBUG] policy_call=22 obs.step=24 cap=25 max_steps=25 done=False
+  seed=  75  grader=0.2825  steps=25/25  parse=23/23  burning=7  burned=475
+  hard: mean=0.3602 ± 0.0616
+
+Overall OpenEnv mean grader score: 0.4839
+Results saved -> submission_artifacts/eval_untrained.json
