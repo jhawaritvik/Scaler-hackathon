@@ -145,10 +145,11 @@ def main() -> int:
     parser.add_argument("--task", default="easy")
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--num-prompts", type=int, default=3)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
     args = parser.parse_args()
 
     config = Config()
-    config.max_new_tokens = 128
+    config.max_new_tokens = args.max_new_tokens
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"Pulling one observation from {args.base_url} task={args.task} seed={args.seed} ...")
