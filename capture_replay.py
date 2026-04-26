@@ -24,6 +24,14 @@ After capture, view in a browser:
 """
 from __future__ import annotations
 
+# Must be the very first import so Unsloth can patch transformers before they load.
+# Wrapped in try/except so the heuristic capture path (--policy heuristic) stays
+# runnable on CPU-only machines that don't have unsloth installed.
+try:
+    import unsloth  # noqa: F401
+except ImportError:
+    pass
+
 import argparse
 import json
 import os
@@ -110,15 +118,12 @@ def capture_llm(
     temperature: float,
     max_new_tokens: int,
 ) -> list[dict]:
-    # Lazy imports — only loaded when --policy llm is actually used so that
-    # the heuristic capture path stays runnable on a CPU-only box.
+    # Remaining heavy imports deferred until --policy llm is actually used.
     import torch
     import xgrammar as xgr
     from xgrammar.contrib.hf import LogitsProcessor as XGrammarLogitsProcessor
 
-    import unsloth  # noqa: F401 — patches transformers
     from unsloth import FastLanguageModel
-
     from train_grpo import build_grammar_compiler, _build_messages
 
     print(f"Loading {model_name} (4-bit) …")
@@ -170,6 +175,10 @@ def capture_llm(
         if generate_fn is None:
             generate_fn = model.generate
 
+        # KV cache validated for the LoRA + XGrammar + _old_generate combo
+        # via _tmp_cache_smoke.py — same generation path as eval_policy_http.py.
+        # 5-10× faster than use_cache=False; necessary for an untrained capture
+        # to finish in minutes instead of an hour.
         gen_out = generate_fn(
             prompt_ids,
             attention_mask=prompt_attn,
@@ -178,7 +187,7 @@ def capture_llm(
             top_p=0.95,
             top_k=50,
             do_sample=True,
-            use_cache=False,
+            use_cache=True,
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )

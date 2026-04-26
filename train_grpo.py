@@ -218,7 +218,7 @@ def _write_checkpoint_index(
 
 
 # ---------------------------------------------------------------------------
-# System prompt shared conceptually with the HTTP evaluator; kept local so
+# System prompt shared conceptually with the OpenEnv evaluator; kept local so
 # training has no external API-token dependency.
 # ---------------------------------------------------------------------------
 
@@ -365,7 +365,7 @@ class Trajectory:
     task_id: str
     seed: int
     sampling_seed: int
-    total_return: float        # sum(step_rewards) + 2.0 * grader_score
+    total_return: float        # sum(step_rewards) + grader_return_weight * grader_score
     grader_score: float
     episode_steps: int
     action_parse_successes: int
@@ -475,6 +475,10 @@ def rollout_episode(
         if generate_fn is None:
             generate_fn = model.generate
             
+        # KV cache validated for the LoRA + XGrammar + _old_generate combo
+        # via _tmp_cache_smoke.py across diverse step depths and tasks. Same
+        # generation path as eval_policy_http.py (use_cache=True). The 5-10×
+        # speedup over use_cache=False makes the rollout phase tractable.
         gen_out = generate_fn(
             prompt_ids_t,
             attention_mask=prompt_attn_t,
@@ -483,7 +487,7 @@ def rollout_episode(
             top_p=config.rollout_top_p,
             top_k=config.rollout_top_k,
             do_sample=True,
-            use_cache=False,
+            use_cache=True,
             logits_processor=[xgr_proc],
             pad_token_id=tokenizer.eos_token_id,
         )
