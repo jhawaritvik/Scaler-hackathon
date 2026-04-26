@@ -37,7 +37,7 @@ The environment also fits long-horizon planning because the policy has to:
 
 - commit scarce assets early without knowing the full fire picture
 - recover from weak opening moves after delayed ignitions and warmup spread
-- track unit availability, return-to-service timing, and structure priorities over 15-25 steps
+- track unit availability, return-to-service timing, and structure priorities over 20-25 steps
 
 This submission is a single-agent world-modeling environment with long-horizon planning — not a multi-agent or self-play arena.
 
@@ -66,7 +66,7 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-like-policy flagging
 - Training plot/export helper ([`plot_training_curves.py`](./plot_training_curves.py)) that turns `log.jsonl` into judge-friendly SVG reward/loss curves with no extra plotting dependency
 - Submission readiness checker ([`submission_check.py`](./submission_check.py)) for the final hackathon packaging pass
-- Hugging Face training notebook ([`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)) and separate HTTP evaluation notebook ([`notebooks/wildfire_http_eval_hf.ipynb`](./notebooks/wildfire_http_eval_hf.ipynb))
+- Hugging Face training notebook ([`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb)) and separate OpenEnv evaluation notebook ([`notebooks/wildfire_http_eval_hf.ipynb`](./notebooks/wildfire_http_eval_hf.ipynb); legacy filename, WebSocket transport)
 
 ## Why this environment
 
@@ -122,8 +122,8 @@ Each observation includes:
 ### Partial observability (fog of war)
 
 Only cells within sensor range of a deployed resource are fully visible;
-the rest show as `?` in the grid string. Per-resource sensor radii
-(Manhattan cells) are calibrated from PMC 2017 FLIR reconnaissance data:
+the rest show as `?` in the grid string. Per-resource sensor radii use
+Euclidean grid discs calibrated from PMC 2017 FLIR reconnaissance data:
 
 | resource | radius | radius (standby) |
 |---|---:|---:|
@@ -156,11 +156,13 @@ Three graded difficulty levels with cellular-automaton fire spread
 | medium | 20×20 | 20 | 2 + 1-2 delayed | 4-6 (≤P2) | 3-4 | 1-2 | 0-1 | 12-22 |
 | hard | 25×25 | 25 | 2 + 2-3 delayed | 4-6 (≤P3) | 4-5 | 1-2 | 0-1 | 15-24 |
 
-Each task has a deterministic grader that returns `0.0` to `1.0` using:
+Each task has a deterministic grader that returns a score strictly within `(0, 1)` using:
 
-- `60%` structure protection (priority-weighted)
-- `30%` area preservation
-- `10%` containment efficiency
+- `45%` structure protection (priority-weighted)
+- `20%` area preservation
+- `15%` active containment
+- `10%` spread-limit budget
+- `10%` efficiency bonus
 
 ## Reward
 
@@ -201,7 +203,7 @@ checks protect the training signal:
   `fire_extinguished` fires once per episode.
 - **Duplicate-dispatch block**: assigning the same unit twice in a step
   triggers `INVALID_ACTION_PENALTY`.
-- **Min-step guard**: episodes cannot terminate before 3-5 steps
+- **Min-step guard**: episodes cannot terminate before 3-6 steps
   (`min_steps_before_early_end`) to prevent early-exit reward farming.
 
 ### Reward audit (`reward_audit.py` / `reward_audit.json`)
@@ -216,9 +218,9 @@ Results on the current HEAD (84 episodes across the fixed curriculum seed bank):
 
 | Task | Policy Spearman | Policy Kendall | Episode Spearman | Exploit flags |
 |---|---:|---:|---:|---|
-| easy | 0.964 | 0.926 | 0.528 | none |
-| medium | 0.927 | 0.823 | 0.898 | none |
-| hard | 0.852 | 0.720 | 0.792 | none |
+| easy | 0.964 | 0.926 | 0.794 | none |
+| medium | 0.964 | 0.926 | 0.847 | none |
+| hard | 0.927 | 0.823 | 0.897 | none |
 
 Exploit policies (`noop`, `stage_all`, `invalid_duplicate`) consistently
 rank below the sane policies on every task and never outrank the heuristic on
@@ -295,9 +297,9 @@ selected from a 0-79 sweep and filtered to heuristic grader in 0.2-0.85
 
 | task | mean | min | max | held-out eval seeds |
 |---|---:|---:|---:|---|
-| easy | 0.6970 | 0.58 | 0.82 | 11, 18, 25, 56, 76 |
-| medium | 0.5500 | 0.35 | 0.66 | 1, 7, 28, 61, 69 |
-| hard | 0.5800 | 0.41 | 0.65 | 9, 28, 32, 61, 75 |
+| easy | 0.5546 | 0.4237 | 0.6670 | 11, 18, 25, 56, 76 |
+| medium | 0.4571 | 0.2641 | 0.5853 | 1, 7, 28, 61, 69 |
+| hard | 0.4786 | 0.3030 | 0.6074 | 9, 28, 32, 61, 75 |
 
 These numbers are produced by the structure-aware heuristic in
 `wildfire_env/server/app.py` (`_heuristic_action`). The heuristic ranks
@@ -332,8 +334,14 @@ seed contributes one tiny gradient nudge, and diversity beats repetition for
 generalization. That math depends on having enough total samples — typically
 10⁶–10⁸ frames — for the law of large numbers to kick in.
 
-This run does not. The compute budget is 60 GRPO iterations × 4 trajectories
-= **240 total episodes**. Stretching 240 episodes across 1000 unique seeds means
+The *default* `Config` in `train_grpo.py` does not. The compute budget
+**for that default** is 60 GRPO iterations × 4 trajectories = **240 total
+episodes** (and the 16-seed / episode-count story below is written for that
+default). The **20-iteration** `deadline_v2_a10g` run used 2 rollouts per
+iter and 20 iters, i.e. on the order of **40** training episodes, with
+`seeds_per_iter=1` and a smaller curriculum—so the default “240” math does
+**not** apply to the submitted hackathon run; see `Blog.MD`. Stretching 240
+episodes across 1000 unique seeds means
 each scenario is seen ~0.24 times on average — far below what GRPO needs for
 meaningful within-group advantage estimation (which compares trajectories on
 the *same task* and computes `(r - mean_r) / std_r`). With unique-seed-per-iter
@@ -359,9 +367,11 @@ The 16-seed pool is the deliberate middle ground:
   the pool — the eval JSONs are designed to surface that failure mode.
 
 The honest tradeoff: a wider seed pool would generalize better *if* the
-compute existed to support it. Within a $30 hackathon budget, concentrating
-240 episodes on 16 representative scenarios produces a more reliable
-gradient than spreading them thin.
+compute existed to support it. Under the default 60-iter `Config`, concentrating
+those 240 episodes on 16 representative scenarios is the intended way to
+get a more reliable gradient than spreading the same budget across thousands
+of one-off seeds. The **submitted** `deadline_v2_a10g` run (20 iters) is
+deliberately shorter: see `Blog.MD` for the exact tradeoff.
 
 ## Training
 
@@ -369,6 +379,18 @@ A multi-turn GRPO pipeline lives in `train_grpo.py`. Stack:
 Qwen3-4B-Instruct-2507 (4-bit QLoRA via Unsloth) + XGrammar-constrained decoding +
 hand-rolled GRPO loop (TRL's GRPOTrainer is single-turn only; multi-turn
 trajectory advantages require a custom loop).
+
+**Defaults vs hackathon submission.** The checked-in `Config` in
+`train_grpo.py` targets **60** GRPO iterations with `group_size=4`,
+`seeds_per_iter=2`, and a long hard-stage curriculum. The **submitted
+adapter** and training curves in this repo are from a **20-iteration** run
+`deadline_v2_a10g` (see `notebooks/wildfire_training_eval_hf.ipynb` Cell 4
+and the “How much training actually happened” section in `Blog.MD`):
+`total_iterations=20`, `group_size=2`, `seeds_per_iter=1`, and a narrow
+`task_curriculum` ending at hard for iters 12-19. If you re-run
+`python train_grpo.py` with no args you get the long 60-iter schedule, not
+the 20-iter path unless you pass matching CLI overrides or use the
+notebook.
 
 Notebook workflows:
 
@@ -391,8 +413,8 @@ Once you have GPU access, this is the clean path to a final submission package:
 ```bash
 .\.venv\Scripts\python.exe reward_audit.py --json-out reward_audit.json
 .\.venv\Scripts\python.exe train_grpo.py
-.\.venv\Scripts\python.exe eval_policy_http.py --untrained --base-url https://chunchunmaru-101-wildfire-env.hf.space --output submission_artifacts/eval_untrained.json
-.\.venv\Scripts\python.exe eval_policy_http.py --base-url https://chunchunmaru-101-wildfire-env.hf.space --output submission_artifacts/eval_trained.json
+.\.venv\Scripts\python.exe eval_policy_http.py --untrained --base-url https://chunchunmaru-101-wildfire-env.hf.space --seeds-per-task 5 --output submission_artifacts/eval_untrained.json
+.\.venv\Scripts\python.exe eval_policy_http.py --base-url https://chunchunmaru-101-wildfire-env.hf.space --seeds-per-task 5 --output submission_artifacts/eval_trained.json
 .\.venv\Scripts\python.exe submission_check.py --strict
 ```
 
@@ -402,7 +424,7 @@ Once you have GPU access, this is the clean path to a final submission package:
 Hugging Face job can be resumed and audited without guessing paths.
 
 The outputs land in [`submission_artifacts/`](./submission_artifacts/), which
-is where the final reward/loss plots and HTTP eval JSONs should be committed
+is where the final reward/loss plots and OpenEnv eval JSONs should be committed
 before the final hackathon push.
 
 ## Results

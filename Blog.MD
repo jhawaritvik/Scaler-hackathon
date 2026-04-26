@@ -1,192 +1,142 @@
 # An Environment to Save the Environment
 
-## TL;DR
+I started this project with a small thought:
 
-This project is an OpenEnv-compatible wildfire incident-command environment hosted on Hugging Face Spaces. An AI agent acts as an incident commander: it observes a partially visible wildfire, dispatches limited firefighting resources, protects structures, and is graded through a deterministic `/grader` endpoint.
+What if an AI agent could practice making decisions in a wildfire before those decisions ever mattered in the real world?
 
-The core idea is to test whether language-model agents can make useful long-horizon decisions in a dynamic world where actions have delayed consequences. The agent is not answering a one-shot question. It is commanding an incident through changing weather, terrain, fire spread, resource logistics, structure priorities, and safety constraints.
+That sentence slowly became the heart of the project:
 
-- Live Space: https://huggingface.co/spaces/Chunchunmaru-101/wildfire-env
-- Live app: https://chunchunmaru-101-wildfire-env.hf.space
-- OpenEnv endpoints: `WS /ws` (stateful `EnvClient` session for `reset`/`step`), `POST /grader`, `GET /tasks`, `GET /schema`
-- Primary hackathon theme: world modeling / professional tasks
-- Secondary theme: long-horizon planning and instruction following
+**An environment to save the environment.**
 
-## Why Wildfire?
+At first, I thought I was simply building a wildfire simulator. Make a grid, add trees, start a fire, give the agent water drops and fire crews, and see if it can stop the spread. It sounded clean and manageable.
 
-When I started this project, I thought I was building a wildfire simulator.
+The first version even looked convincing. There was a map. There was fire. There were actions. The agent could send resources and the fire would react.
 
-That sounds straightforward enough: make a forest, start a fire, give an AI agent a few firefighting tools, and ask it to stop the spread. In the first version, that is more or less what I did. I prompted an AI, accepted a lot of generated code, and watched something that looked like an environment come together.
+But when I sat with it for a while, something felt wrong.
 
-Then I read through what had been produced.
+It was not really a wildfire. It was a puzzle wearing wildfire clothes.
 
-It had the shape of a simulator, but not the soul of one. The environment was too rigid. Fires spread because a rule said they should spread. Resources worked because a rule said they should work. The agent was not really operating inside a living system. It was mostly solving a scripted puzzle.
+The fire spread because I told it to spread. The resources worked because I told them to work. The agent was not learning to survive a changing situation. It was learning my script.
 
-That matters, because wildfire is not a scripted puzzle.
+That bothered me, because wildfire is the opposite of scripted.
 
-Wildfire is weather, terrain, fuel, moisture, timing, visibility, logistics, and human decision-making colliding under pressure. A decision that looks reasonable at minute 0 can become useless by minute 40 if the wind shifts, a crew is still returning, a structure becomes exposed, or the fire creates its own local conditions.
+Wildfire is messy. Wind changes. Moisture drops. Heat builds. Fire moves uphill faster. A crew can be busy when you suddenly need it somewhere else. A structure that looked safe ten minutes ago can become the most important thing on the map.
 
-The moment that changed the project for me was one physical loop I remembered from school-level science: a forest catches fire, the air gets hotter, hot air rises, pressure changes near the fire, and wind can be pulled toward the burn area, making the fire worse. That was just one phenomenon. Once I started thinking that way, I realized there would be dozens of patterns like it. I could not hand-script all of them.
+The more I thought about it, the more I realized that the environment should not be a list of hand-written wildfire events. It should be a world with enough basic pieces that interesting behavior can happen on its own.
 
-So I changed the goal.
+So I changed direction.
 
-Instead of trying to model every wildfire phenomenon directly, I tried to model the base variables that allow those phenomena to emerge: fuel type, elevation, slope, aspect, moisture, temperature, humidity, wind speed, wind direction, heat, fire intensity, structures, and resource logistics.
+Instead of scripting "wildfire behavior", I started modeling the ingredients behind it: fuel, elevation, slope, water, moisture, temperature, humidity, wind, heat, intensity, structures, and resource travel time. I wanted the agent to feel pressure from the world, not just from a scoring rule.
 
-AI helped most when I used it as a research assistant rather than a code generator: finding wildfire modeling references, pointing me toward Rothermel-style fuel and moisture effects, Alexandridis-style cellular automata, spotting behavior, and operational firefighting concepts like LCES safety and dispatch timing.
+That is where the project became real for me.
 
-The result is a grid-based OpenEnv environment where the agent is not asked to answer a wildfire question. It is asked to command an incident.
+## The Moment It Clicked
 
-## What the Environment Tests
+There was one simple science idea that stuck in my head: fire heats the air, hot air rises, pressure changes around the fire, and wind can be pulled toward the burn area. That can make the fire worse.
 
-I did not want to build a generic benchmark where an agent moves around a toy grid and collects points. I wanted an environment where planning actually meant something.
+It is such a small loop, but it changed how I looked at the project.
 
-The agent must make a sequence of decisions under uncertainty:
+If even one part of wildfire had that kind of feedback, then how many other loops was I missing? Wind affects fire. Fire affects heat. Heat affects nearby cells. Moisture changes over time. Terrain changes spread. Delayed ignitions change the plan. Resources take time to move and come back.
 
-- Which fire front matters most right now?
-- Which structure is worth protecting first?
-- Should scarce resources attack active fire, build a line ahead of it, stage for a delayed ignition, or protect a structure?
-- Is a ground assignment tactically useful but unsafe?
-- Should aircraft be spent now, or saved for a wind-driven run later?
+I could not script all of that one by one.
 
-This is why the environment fits the world-modeling and professional-task theme. The task is not solved by producing fluent text. It is solved by maintaining state across turns and choosing structured actions that change a simulated world.
+So the goal became different: build a place where those pressures can exist together, and let the agent deal with the consequences.
 
-## The World the Agent Sees
+## What the Agent Is Really Doing
 
-Each episode is a wildfire incident on a seeded terrain grid:
+The agent is not just putting water on red squares.
 
-- Easy: `15x15`
-- Medium: `20x20`
-- Hard: `25x25`
+It is acting like an incident commander.
 
-The world contains fuel types, elevation, slope, aspect, water, structures with priorities, ignition points, delayed ignitions, and changing weather.
+Every episode starts as a seeded wildfire incident. Easy tasks use a `15x15` grid, medium uses `20x20`, and hard uses `25x25`. The map has terrain, fuel, water, structures, ignition points, delayed ignitions, and weather.
 
-The fire does not simply expand one square at a time. Spread is affected by wind, fuel, moisture, slope, heat, and intensity. Weather changes over time. Moisture dries. Retardant decays. Wind can push spread directionally. High wind can create spotting behavior. The environment also tracks local airflow potential, a simplified way of capturing the idea that a large fire can influence the air around it.
+The agent gets observations over time. It sees burning cells, heat warnings, structure priorities, weather, short forecasts, available units, active missions, and return times. It also gets an `action_guide` in normal language so it knows what resources are available and what they can do.
 
-The agent receives a structured observation each step:
+But it does not get a perfect world.
 
-- visible burning cells and heat warnings
-- structure status and priorities
-- current weather and a short forecast
-- terrain information
-- fleet status
-- active missions and return times
-- available resources
-- last action summary
-- dense step reward
-- a natural-language `action_guide`
+There is fog of war. The agent may know a fire exists, but it may not know every detail unless resources are positioned to observe the area. That one choice made the environment feel much more alive to me. Suddenly, scouting mattered. Staging mattered. Not knowing mattered.
 
-The environment also includes fog of war. The agent may know that a fire exists, but it does not automatically know every important detail unless resources are positioned to observe it. This turns the problem from "put water on the red squares" into something closer to incident command: where should I send scarce resources, what should I protect first, and what am I willing to leave uncertain?
+The agent has to make decisions like:
 
-## The Fleet
+- Do I protect the closest structure or the highest-priority one?
+- Do I attack the active fire or build a line ahead of it?
+- Do I send the helicopter now or save it for a worse front later?
+- Do I move a unit closer before I need it?
+- Is this ground crew assignment useful but unsafe?
 
-The agent has six types of firefighting resources:
+Those are the kinds of questions I wanted the environment to create.
 
-- Hand crews are versatile and can perform direct attack, build lines, protect points, and set backfires.
-- Engines are faster ground units that can attack fire and build wet lines.
-- Helicopters can perform water drops and point protection, with refill behavior tied to water access.
-- Air tankers can drop long-term retardant over larger areas, but have longer return times.
-- Dozers can build durable firebreaks, especially useful for shaping the future fire perimeter.
-- Smokejumpers deploy quickly into remote areas but are scarce and slow to return.
+## The Resources Are Not Magic
 
-These resources are not magic buttons. Each unit has dispatch timing, travel time, return time, status, position, and mission constraints. If the agent sends everything to one flame front, it may have nothing left when a delayed ignition threatens a structure somewhere else. If it keeps units idle, the fire keeps gaining ground. If it sends ground crews into unsafe positions without escape routes or safety zones, the environment penalizes that through an LCES-inspired safety check.
+The agent controls hand crews, engines, helicopters, air tankers, dozers, and smokejumpers.
 
-The actions are tactical, not just directional. A model can issue:
+I tried to make them feel limited.
 
-- direct attack
-- line construction
-- wet line
-- water drop
-- retardant drop
-- point protection
-- backfire
-- staging
+A helicopter can move fast, but it still has refill and return behavior. An air tanker can cover more area, but it takes longer to come back. A dozer can build a strong firebreak, but it is not instant. Smokejumpers can deploy quickly, but they are scarce. Ground crews can do a lot, but they can also be sent into unsafe places.
 
-Targets can be points, lines, areas, polygons, or specific structures. A valid action is structured JSON, but the reasoning behind it is strategic: protect the highest-priority structure, cut off spread before wind makes it worse, pre-position resources before they are needed, and avoid wasting expensive missions on low-impact moves.
+That last part mattered to me. In a real wildfire, "effective" and "safe" are not always the same thing. So the environment includes an LCES-inspired safety check. If a ground unit is sent too close to active fire without a reachable escape or safety zone, the agent is penalized.
 
-## OpenEnv API Surface
+This is where the environment starts to become more than a game. The best action is not always the action with the biggest immediate effect.
 
-The deployed Space exposes the environment through OpenEnv's standard surface:
+## A Bug That Taught Me Something
 
-- `WS /ws` runs a stateful session via the official `EnvClient`. One persistent connection drives `reset(task_id, seed)` then `step(action)` calls until the episode ends. This is the canonical OpenEnv transport for multi-turn rollouts.
-- `POST /grader` scores the final episode state. Wildfire-specific endpoint, layered on top of the OpenEnv core.
-- `GET /tasks` lists task definitions and resource compatibility.
-- `GET /schema` exposes action and observation schemas.
+One of the most useful mistakes happened during evaluation.
 
-A small but important detail: OpenEnv core's `POST /reset` and `POST /step` HTTP handlers are intentionally stateless — they construct a fresh environment per request and tear it down. They're useful for one-shot probes but cannot drive multi-turn rollouts. We discovered this the hard way when our first evaluation pass returned `obs.step == 1` after every step regardless of how many turns we ran. Switching to the official `EnvClient` WebSocket session — which keeps one environment alive for the lifetime of the connection — fixed it immediately. This is the contract every OpenEnv example documents, and it's what real RL evaluations need.
+I first tried to run episodes through raw HTTP calls: `POST /reset`, then `POST /step`, then another `POST /step`.
 
-This matters for judging because the final showcase evaluation is not a private in-process shortcut. Both baseline and trained-policy evaluation are driven through the live Hugging Face Space using the official OpenEnv `EnvClient` plus the wildfire-specific `/grader`.
+The numbers looked strange. The observation kept coming back like the episode was not really moving forward. Eventually I realized why: the OpenEnv HTTP handlers are stateless. Each `POST /step` creates a fresh environment, steps once, and then throws it away.
 
-## Reward and Grader Design
+That is fine for quick checks, but it is not a real rollout.
 
-The reward function had to do two things at once.
+For a real multi-turn episode, I had to use the official OpenEnv `EnvClient` through `WS /ws`. That keeps the environment alive across the whole episode.
 
-First, it had to teach the agent what matters: protect structures, preserve area, suppress active fire, contain spread, and extinguish the incident quickly. Structures are priority-weighted. Suppression earns reward when it actually reduces burning cells. Containment reward is gated on active suppression so the agent cannot get paid for simply waiting until fuel burns out.
+It sounds like a technical detail, but it mattered a lot. A long-horizon planning environment is only meaningful if the world remembers what happened.
 
-Second, it had to avoid obvious reward hacks:
+So the final evaluation uses the WebSocket path for `reset` and `step`, then calls `POST /grader` at the end. Both the untrained and trained policies are judged through the live Hugging Face Space.
 
-- No-op behavior is penalized when units are available and fire is burning.
-- Duplicate dispatches are invalid.
-- Wasteful low-impact actions are penalized.
-- Structure-loss penalties are single-use.
-- Episodes cannot terminate immediately just to farm early rewards.
-- The final episode grader is separate from the dense training reward.
+## Teaching Without Letting the Agent Cheat
 
-The final grader returns a score from `0.0` to `1.0` using:
+Designing the reward was harder than I expected.
 
-- `60%` structure protection
-- `30%` area preservation
-- `10%` containment efficiency
+If the reward is too simple, the model can learn weird shortcuts. If it gets points for containment, maybe it waits for the fire to burn itself out. If actions cost something, maybe it learns to do nothing. If structure loss is punished every step, maybe one bad event dominates the whole episode.
 
-That separation matters. The dense reward helps GRPO training learn from every step, but the grader is the cleaner judge-facing measure of whether the incident was actually handled well.
+So I split the problem into two parts.
 
-## Reward-Hacking Audit
+The dense reward helps training step by step. It rewards useful suppression, structure protection, area preservation, and faster containment. It also punishes no-ops, duplicate dispatches, invalid actions, unsafe ground assignments, and low-impact moves.
 
-The repository includes a reward audit harness that compares dense reward against final grader behavior. It runs a bank of fixed policies, including sane baselines and exploit-like policies:
+The final grader is separate. It gives a score strictly inside `(0, 1)` using five parts:
 
-- `noop`
-- deterministic heuristic
-- ground-only heuristic
-- aerial-only heuristic
-- stage-all
-- invalid duplicate dispatch
-- random valid policy
+- `45%` structure protection
+- `20%` area preservation
+- `15%` active containment
+- `10%` spread limit
+- `10%` efficiency
 
-On the current audit summarized in the Space README, exploit-like policies do not outrank the sane heuristic policies on the final grader. The policy-level Spearman correlations are high across difficulties:
+I also wrote a reward audit. It runs normal policies and obviously bad policies like no-op, stage-all, invalid duplicate dispatch, and random valid actions. The goal was to make sure the bad policies do not accidentally look good.
 
-- Easy: `0.964`
-- Medium: `0.927`
-- Hard: `0.852`
-
-This is not proof that the reward is perfect, but it is evidence that the obvious failure modes were tested instead of ignored.
+On the current audit, the exploit-like policies stay below the sane heuristic policies. That does not make the reward perfect, but it made me more confident that the environment was not rewarding the most obvious wrong behavior.
 
 ## Training the Commander
 
-The training setup uses:
+For training, I used `Qwen/Qwen3-4B-Instruct-2507` with LoRA / QLoRA and GRPO. The
+**submission** is trained on a **20-iteration** compressed schedule
+(`deadline_v2_a10g` in the HF training notebook, see below); the checked-in
+`train_grpo.py` defaults to **60** iterations for a longer “full” run I did
+not have time to complete for the hackathon.
 
-- Qwen3-4B-Instruct
-- LoRA / QLoRA
-- GRPO
-- structured JSON actions
-- grammar-constrained decoding to reduce malformed actions
-- a curriculum from easy to medium to hard incidents
+The model has to output structured JSON actions. To make that less fragile, I used grammar-constrained decoding. The training curriculum moves from easy to medium to hard incidents.
 
-The training loop is multi-turn. The model does not receive a static prompt and produce a single answer. It observes the environment, emits an action, receives the next state, and continues until the incident ends or the episode limit is reached.
+The important part is that the model acts over many turns. It observes the incident, sends an action, receives the next state, and keeps going until the episode ends.
 
-The final evaluation path uses the official OpenEnv transport. The evaluator opens a persistent `EnvClient` WebSocket session against the deployed Space, runs `reset` then `step` per episode (preserving server-side state across turns the way OpenEnv intends), and calls `POST /grader` for the final score. Untrained and trained policies interact with the same deployed environment surface using the same flags so the delta is a clean apples-to-apples comparison.
+The final comparison is meant to be fair:
 
-## Baseline and Evaluation Plan
-
-The environment includes a deterministic heuristic baseline that ranks fires by structure proximity and assigns resources greedily. This baseline is useful because it gives judges a non-LLM reference point and helps catch broken environment behavior.
-
-The final trained-vs-untrained comparison is designed to use the same settings for both runs:
-
-- same live Space URL
+- same live Hugging Face Space
 - same held-out seeds
-- same max episode steps
-- same max generation tokens
-- same grader endpoint
+- same generation settings
+- same episode limits
+- same final grader
 
-The expected final artifacts are:
+The final evidence lives in files like:
 
 - `submission_artifacts/eval_untrained.json`
 - `submission_artifacts/eval_trained.json`
@@ -195,28 +145,131 @@ The expected final artifacts are:
 - `submission_artifacts/training_summary.md`
 - `reward_audit.json`
 
-If the trained model does not dramatically beat the baseline, the environment is still meaningful: the project is primarily an environment submission. The important claim is that the world is rich enough to expose planning behavior, delayed consequences, partial observability, resource scarcity, safety tradeoffs, and weather-driven dynamics.
+Even if the trained model is not perfect, I think the environment still matters. The real goal is to create a world where planning can be tested: uncertainty, delays, scarce resources, safety tradeoffs, and weather-driven consequences.
+
+## The Choices Behind the Numbers
+
+I want to be honest about the tradeoffs that shaped what this submission can and cannot show.
+
+### Why a 4B model and not a 1B one
+
+The first version of this project tried `Qwen2.5-1.5B`. On paper it was the obvious pick: faster training, more iterations per hour, and a bigger relative jump from baseline to trained.
+
+In practice it broke on the action structure.
+
+Each action is a nested JSON object: a unit ID, a mission type, a target shape with waypoints, and a commitment length. Not every mission type is valid for every resource type. Not every target shape is valid for every mission type. The unit IDs change every observation. Grammar-constrained decoding can keep the JSON well-formed, but it cannot tell the model that a dozer cannot do a water drop or that a smokejumper cannot build a polygon. Smaller models kept producing valid-looking actions that the environment had to reject.
+
+When the environment rejects too many actions, the GRPO reward signal becomes noise. You are no longer training a wildfire policy. You are training a JSON validator that occasionally also fights fires.
+
+So I moved to `Qwen3-4B-Instruct-2507`. The base model already understands the action structure well enough that even untrained, the parse rate stays close to perfect through every observation. That lets GRPO actually focus on tactics: which unit, where, for how long, and why now.
+
+The cost is real. A 4B model on a single A10G is slower per training step. I made the call anyway, because a small jump on a fair signal seemed more honest than a large jump on a broken signal.
+
+### How much training actually happened
+
+I want to be specific about this, because it shapes what you should and should not read into the eval numbers.
+
+The default training configuration in this repository is sixty GRPO iterations with a curriculum of easy `0-10`, medium `10-25`, hard `25-60`, four-rollout groups, and two base seeds per iteration. That is the configuration the environment was tuned for.
+
+The configuration I actually ran for the deadline submission was a compressed version:
+
+```
+total_iterations = 20
+curriculum       = ("easy", 0, 5), ("medium", 5, 12), ("hard", 12, 20)
+group_size       = 2
+seeds_per_iter   = 1
+warmup_iters     = 3
+save_every       = 6
+run_name         = "deadline_v2_a10g"
+```
+
+I ran that job to completion: **20 GRPO iterations** on this schedule (unlike
+the 60-iteration default in `train_grpo.py`, which I did not have wall-clock
+budget to finish in time for the hackathon). The adapter shipped with
+`eval_policy_http.py` / `grpo_wildfire/final_adapter` comes from this run.
+
+Concretely, compared to the default `Config` in the repo, this run uses:
+
+- **20** total iterations, not 60.
+- **Half** the rollouts per iteration (`group_size` 2 vs 4).
+- **Half** the base seeds per iteration (`seeds_per_iter` 1 vs 2), so
+  within-group advantage statistics are noisier than the default setup.
+- Curriculum split: easy iters 0-4, medium 5-11, **hard 12-19** (eight
+  hard-task iterations, not the full 35 hard iters the default 60-iter
+  schedule would have allowed).
+
+When you read `submission_artifacts/eval_trained.json`, the trained-versus
+untrained gap is therefore from a **short** GRPO run on a 4B model, not
+from a long production training job.
+
+If you are auditing the run, cross-check: `grpo_wildfire/log.jsonl` (last
+`iter` line), or `grpo_wildfire/adapter_iter0020/`, and `grpo_wildfire/
+resume_state.json` / `run_status.json` for `last_completed_iter` and
+`total_iterations=20` — the numbers in those files are the source of truth.
+
+### What 20 iterations buys you
+
+Twenty iterations of GRPO is enough to move the policy. It is not enough to claim mastery.
+
+The trained model is better than the untrained model. It uses more of the fleet, plans further ahead, and avoids more of the obviously bad moves. It is still beaten on some seeds by the hand-written heuristic baseline that has years of operational logic written into it line by line.
+
+I think that comparison is the right one to look at. The interesting question for an environment like this is not "did the agent beat a number". It is "does training in this environment teach the agent something that transfers across seeds it never saw". The numbers answer that, even when the absolute scores are not flashy.
+
+### What I would do with more compute
+
+If I had another two days of A10G time, the order of priority would be:
+
+1. Just run the default sixty-iteration configuration end to end, with the original `group_size=4`, `seeds_per_iter=2`, and full curriculum. That alone would give the hard stage twenty-plus iterations instead of three.
+2. Behavior cloning the heuristic baseline first, then GRPO on top. That gives the model a strong prior on the constraint structure and lets RL focus purely on tactics.
+3. Curriculum stages with explicit fog-of-war and weather-shift mini-episodes, so the model is forced to handle each pressure in isolation before they all combine.
+4. A larger held-out set, ideally 25-50 seeds per task, so the trained-versus-baseline gap can be reported with proper confidence intervals.
+
+None of these are research stretches. They are time stretches.
+
+### What I would not change
+
+The environment design. The two-stage reward and grader. The OpenEnv WebSocket transport. The grammar-constrained action format. The reward audit. The held-out seeds. Those are the parts I want the next agent to inherit.
+
+The agent is the variable. The environment is the contribution.
 
 ## What I Learned
 
-The biggest lesson was that AI is very good at producing something that looks complete before it is actually correct.
+The biggest lesson was that AI can make something look finished before it is actually correct.
 
-At the start, I was prompting the AI to "do things" and accepting the output too quickly. The real progress began when I stopped treating AI as an autopilot and started treating it as a collaborator I had to audit. The first generated environment gave me a scaffold. The second pass made me ask whether the scaffold matched the real problem.
+At the beginning, I was asking Claude to build things and accepting too much too quickly. It felt productive, but I was not always checking whether the result matched the problem.
 
-For a world-modeling environment, rigidity is the enemy. If the agent is only learning your hand-written script, it is not learning the world. The environment needs enough base mechanics for surprising but plausible behavior to emerge.
+The project improved when I stopped treating AI like an autopilot and started treating it like a collaborator I had to challenge.
 
-That is what I tried to build here: not a perfect wildfire simulator, but a serious planning environment where an AI incident commander has to reason under uncertainty, act with limited resources, and live with the consequences of its decisions.
+The first version gave me a scaffold. The second version came from asking harder questions:
 
-## Why This Belongs in the HF Space
+Is this really dynamic?
 
-The judge's guidance was clear: the blog should be a separate Markdown file pushed into the Hugging Face Space, separate from the README. That is why this writeup is provided as `Blog.MD`.
+Can the agent make a bad early decision and suffer for it later?
 
-Keeping the environment, README, blog, training scripts, eval scripts, and artifacts together in the HF Space makes the submission easier to judge. The Space is not only a demo link. It is the deployed environment, the API surface, the documentation, and the evidence trail for the final run.
+Does the world keep state?
+
+Can the reward be hacked?
+
+Does the agent have to plan, or is it just reacting?
+
+That process changed how I think about building environments. A good environment should not just look complex. It should create pressure. It should make the agent choose between imperfect options. It should make consequences arrive later.
+
+That is what I tried to build here.
+
+Not a perfect wildfire simulator. Not a real firefighting tool. But a serious planning environment where an AI incident commander has to reason under uncertainty and live with its decisions.
+
+An environment to save the environment.
+
+## Why This File Is Here
+
+The judges asked for the blog as a separate Markdown file in the Hugging Face Space, separate from the README. That is why this file is named `Blog.MD`.
+
+The Space is where the environment lives, so it makes sense for the story, code, README, eval scripts, and artifacts to live there too.
 
 ## References and Influences
 
 - Rothermel, R. C. (1972), wildfire spread modeling
-- Alexandridis et al., cellular automata wildfire spread modeling
+- Alexandridis et al., cellular automata wildfire modeling
 - Albini-style spotting approximations
 - NWCG operational concepts, including LCES and dispatch timing
 - Australia 2019-2020 Black Summer
@@ -229,4 +282,4 @@ Keeping the environment, README, blog, training scripts, eval scripts, and artif
 - Space README: ./README.md
 - Environment package docs: ./wildfire_env/README.md
 - Training pipeline: ./train_grpo.py
-- OpenEnv evaluator (WebSocket via official `EnvClient`, plus `POST /grader`): ./eval_policy_http.py
+- OpenEnv evaluator: ./eval_policy_http.py

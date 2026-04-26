@@ -103,13 +103,19 @@ train(Config(
 ))
 ```
 
-It resumed from `grpo_wildfire/latest` at `start_iter=2`.
+It may resume from `grpo_wildfire/latest` if a previous partial run exists
+(`start_iter` is read from `resume_state.json` — not necessarily 2).
+
+Canonical story for the writeup: **20 completed iterations** of this
+`deadline_v2_a10g` config (not the 60-iter default in `train_grpo.py`). The
+`Blog.MD` and `README.md` "Training" section reflect that. Mid-run log snippets
+below are **historical** and may not match the final checkpoint.
 
 Important: do **not** `git pull` inside the HF training runtime while Cell 4 is
 actively training. Pull only after training stops/finishes and checkpoints are
 uploaded or safely saved.
 
-## Training Status Seen So Far
+## Training status (historical mid-run log)
 
 By ~5:46 AM, training had reached hard:
 
