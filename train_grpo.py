@@ -27,6 +27,15 @@ Architecture notes:
 """
 from __future__ import annotations
 
+# Must be the very first import so Unsloth patches transformers before anything
+# else loads them (xgrammar and torch both trigger transformers import at module
+# level). Wrapped in try/except so the module stays importable on CPU-only
+# machines (tests, env-only runs) that don't have unsloth installed.
+try:
+    import unsloth  # noqa: F401
+except ImportError:
+    pass
+
 import argparse
 import json
 import os
@@ -872,10 +881,6 @@ def train(config: Config):
     run_started_at = _utc_now()
 
     # ── Load model ──────────────────────────────────────────────────────────
-    # Unsloth must be imported before transformers to apply all kernel patches.
-    # We import it here (lazily) so the module is importable on CPU-only machines
-    # for testing, but on GPU it patches transformers correctly at load time.
-    import unsloth  # noqa: F401, PLC0415 — patches transformers before model load
     from unsloth import FastLanguageModel  # noqa: PLC0415
 
     print(f"Loading {config.model_name} (4-bit QLoRA) …")
