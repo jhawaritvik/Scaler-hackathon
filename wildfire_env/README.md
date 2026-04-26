@@ -67,6 +67,17 @@ cd wildfire_env
 uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
+### OpenEnv Client
+
+```python
+from wildfire_env import WildfireAction, WildfireEnv
+
+with WildfireEnv(base_url="http://localhost:8000").sync() as env:
+    result = env.reset(task_id="easy", seed=42)
+    result = env.step(WildfireAction())
+    print(result.observation.action_guide)
+```
+
 ### Docker
 
 ```bash
@@ -275,9 +286,9 @@ Weather conditions (temperature, humidity, wind) are observable but do not direc
 
 ## Baseline Scores
 
-Run the LLM agent:
+Run the HTTP LLM evaluator from the repository root:
 ```bash
-HF_TOKEN=hf_or_provider_token API_BASE_URL=https://your-endpoint/v1 MODEL_NAME=your-model python inference.py
+python eval_policy_http.py --base-url https://chunchunmaru-101-wildfire-env.hf.space --seeds-per-task 1
 ```
 
 Run the deterministic heuristic baseline (no API key needed):

@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
-"""Evaluate a trained wildfire policy through the OpenEnv HTTP API.
+"""Evaluate a wildfire policy through the official OpenEnv API.
 
-The model runs locally in this Python process, but every environment
-interaction goes through HTTP:
+Despite the legacy filename (``eval_policy_http.py`` is referenced in the
+README, notebooks, and ``submission_check.py``), this evaluator uses the
+official OpenEnv ``EnvClient`` over a *persistent WebSocket session*:
 
-  POST /reset  -> observation
-  POST /step   -> next observation
-  POST /grader -> final score
+    POST  /grader   (raw HTTP — wildfire-specific endpoint, not part of OpenEnv)
+    WS    /ws       (reset / step / state — the canonical OpenEnv transport)
 
-This is the final showcase path for judges because it exercises the same
-OpenEnv API surface exposed by the Hugging Face Space.
+Why WebSocket and not raw POST /reset, /step?  The HTTP transport in
+``openenv.core.env_server.http_server`` is intentionally *stateless* — every
+``POST /step`` constructs a fresh ``Environment`` instance, calls ``step``
+once, and tears it down (see ``HTTPEnvServer.register_routes``).  That makes
+it impossible to run multi-turn rollouts over raw HTTP, which is exactly
+what an RL evaluation needs.  The WebSocket session keeps the environment
+alive across ``reset → step → step → ...`` — the contract every OpenEnv
+example documents and the contract our ``WildfireEnv`` client already
+implements.
+
+Episode termination is governed by the environment itself
+(``observation.done`` or ``observation.step >= observation.max_steps``)
+rather than an arbitrary CLI cap, so delayed ignitions actually have time to
+fire.  ``--max-episode-steps`` is preserved as an *upper-bound* override for
+deadline-driven smoke runs only.
 """
 from __future__ import annotations
 
@@ -33,6 +46,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from train_grpo import Config, build_grammar_compiler, _build_messages
+from wildfire_env.client import WildfireEnv
 from wildfire_env.models import WildfireAction, WildfireObservation
 
 
@@ -82,7 +96,7 @@ def load_model_for_eval(adapter_path: str | None, config: Config, device: torch.
         model = PeftModel.from_pretrained(model, adapter_path)
         print("  Adapter loaded.")
     else:
-        print("  No adapter - evaluating base model over HTTP.")
+        print("  No adapter - evaluating base model over OpenEnv WebSocket.")
 
     model.eval()
     return model, tokenizer
@@ -95,6 +109,7 @@ def _http_json(
     *,
     timeout: float = 120.0,
 ) -> dict[str, Any]:
+    """Raw HTTP helper, used only for the wildfire-specific /grader endpoint."""
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -184,6 +199,13 @@ def _grade_final_observation(
     )
 
 
+def _episode_step_cap(env_max_steps: int, override: int | None) -> int:
+    """Cap = env's own max_steps, optionally tightened (never widened) by user override."""
+    if override is None or override <= 0:
+        return env_max_steps
+    return min(env_max_steps, override)
+
+
 def eval_policy_http(
     *,
     base_url: str,
@@ -194,13 +216,15 @@ def eval_policy_http(
     num_shards: int = 1,
     shard_index: int = 0,
     timeout: float = 120.0,
+    max_episode_steps_override: int | None = None,
 ) -> dict[str, Any]:
     if config is None:
         config = Config()
     base_url = base_url.rstrip("/")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Fail fast if the server is unavailable.
+    # Fail fast if the server is unavailable. /grader is wildfire-specific, but
+    # /schema is OpenEnv standard and confirms the server is up.
     _http_json("GET", f"{base_url}/", timeout=timeout)
     _http_json("GET", f"{base_url}/schema", timeout=timeout)
 
@@ -239,107 +263,111 @@ def eval_policy_http(
         "seeds_per_task": seeds_per_task or "all",
         "num_shards": num_shards,
         "shard_index": shard_index,
-        "transport": "openenv_http",
+        "transport": "openenv_websocket",
+        "max_episode_steps_override": max_episode_steps_override,
     }
     all_scores: list[float] = []
 
-    for task_id, seeds in eval_tasks.items():
-        print(f"\n── {task_id} over HTTP ──")
-        task_scores: list[float] = []
-        task_episodes: list[dict[str, Any]] = []
+    # Single persistent WebSocket session for the entire eval. The server
+    # keeps one Environment instance alive for the lifetime of this session,
+    # so reset() starts a new episode and step() advances the same episode.
+    with WildfireEnv(base_url=base_url, message_timeout_s=timeout).sync() as client:
+        for task_id, seeds in eval_tasks.items():
+            print(f"\n── {task_id} over OpenEnv WebSocket ──")
+            task_scores: list[float] = []
+            task_episodes: list[dict[str, Any]] = []
 
-        for seed in seeds:
-            torch.manual_seed(seed + 777_000)
-            reset = _http_json(
-                "POST",
-                f"{base_url}/reset",
-                {"task_id": task_id, "seed": seed},
-                timeout=timeout,
-            )
-            obs = WildfireObservation.model_validate(reset["observation"])
+            for seed in seeds:
+                torch.manual_seed(seed + 777_000)
+                reset_result = client.reset(task_id=task_id, seed=seed)
+                obs = reset_result.observation
+                done = bool(reset_result.done)
 
-            parse_successes = 0
-            token_counts: list[int] = []
-            raw_failures: list[str] = []
-            started = time.time()
-            inner_step = 0
-            hard_cap = config.max_episode_steps
-            while not obs.done and obs.step < config.max_episode_steps and inner_step < hard_cap:
+                step_cap = _episode_step_cap(obs.max_steps, max_episode_steps_override)
+
+                parse_successes = 0
+                token_counts: list[int] = []
+                raw_failures: list[str] = []
+                started = time.time()
+                policy_calls = 0
+
+                while not done and obs.step < step_cap:
+                    print(
+                        f"  [DEBUG] policy_call={policy_calls} obs.step={obs.step} "
+                        f"cap={step_cap} max_steps={obs.max_steps} done={done}",
+                        flush=True,
+                    )
+                    action, parse_ok, token_count, raw_text = _generate_action(
+                        model, tokenizer, compiled_grammar, obs, config, device
+                    )
+                    parse_successes += int(parse_ok)
+                    token_counts.append(token_count)
+                    if not parse_ok and len(raw_failures) < 3:
+                        raw_failures.append(raw_text[:500])
+
+                    step_result = client.step(action)
+                    obs = step_result.observation
+                    done = bool(step_result.done)
+                    policy_calls += 1
+
+                grade = _grade_final_observation(base_url, obs, seed, timeout=timeout)
+                score = float(grade["score"])
+                task_scores.append(score)
+                all_scores.append(score)
+
+                episode = {
+                    "seed": seed,
+                    "score": score,
+                    "steps": obs.step,
+                    "step_cap": step_cap,
+                    "env_max_steps": obs.max_steps,
+                    "policy_calls": policy_calls,
+                    "done": done,
+                    "parse_successes": parse_successes,
+                    "parse_total": len(token_counts),
+                    "parse_success_rate": parse_successes / max(1, len(token_counts)),
+                    "mean_completion_tokens": float(np.mean(token_counts)) if token_counts else 0.0,
+                    "burned_cells": obs.burned_cells,
+                    "burning_cells": obs.burning_cells,
+                    "structures_remaining": obs.structures_remaining,
+                    "structures_lost": obs.structures_lost,
+                    "grader_components": grade.get("components", {}),
+                    "duration_seconds": time.time() - started,
+                    "raw_parse_failures": raw_failures,
+                }
+                task_episodes.append(episode)
                 print(
-                    f"  [DEBUG] inner={inner_step} obs.step={obs.step} "
-                    f"cap={config.max_episode_steps} done={obs.done}",
-                    flush=True,
+                    f"  seed={seed:4d}  grader={score:.4f}  "
+                    f"steps={obs.step:2d}/{step_cap}  "
+                    f"parse={parse_successes}/{max(1, len(token_counts))}  "
+                    f"burning={obs.burning_cells}  burned={obs.burned_cells}"
                 )
-                action, parse_ok, token_count, raw_text = _generate_action(
-                    model, tokenizer, compiled_grammar, obs, config, device
-                )
-                parse_successes += int(parse_ok)
-                token_counts.append(token_count)
-                if not parse_ok and len(raw_failures) < 3:
-                    raw_failures.append(raw_text[:500])
 
-                step = _http_json(
-                    "POST",
-                    f"{base_url}/step",
-                    {"action": action.model_dump()},
-                    timeout=timeout,
-                )
-                obs = WildfireObservation.model_validate(step["observation"])
-                inner_step += 1
+            if task_scores:
+                results[task_id] = {
+                    "scores": task_scores,
+                    "episodes": task_episodes,
+                    "mean": float(np.mean(task_scores)),
+                    "std": float(np.std(task_scores)),
+                    "min": float(np.min(task_scores)),
+                    "max": float(np.max(task_scores)),
+                }
+                print(f"  {task_id}: mean={results[task_id]['mean']:.4f} ± {results[task_id]['std']:.4f}")
 
-            grade = _grade_final_observation(base_url, obs, seed, timeout=timeout)
-            score = float(grade["score"])
-            task_scores.append(score)
-            all_scores.append(score)
-
-            episode = {
-                "seed": seed,
-                "score": score,
-                "steps": obs.step,
-                "done": obs.done,
-                "parse_successes": parse_successes,
-                "parse_total": len(token_counts),
-                "parse_success_rate": parse_successes / max(1, len(token_counts)),
-                "mean_completion_tokens": float(np.mean(token_counts)) if token_counts else 0.0,
-                "burned_cells": obs.burned_cells,
-                "burning_cells": obs.burning_cells,
-                "structures_remaining": obs.structures_remaining,
-                "structures_lost": obs.structures_lost,
-                "grader_components": grade.get("components", {}),
-                "duration_seconds": time.time() - started,
-                "raw_parse_failures": raw_failures,
-            }
-            task_episodes.append(episode)
-            print(
-                f"  seed={seed:4d}  grader={score:.4f}  "
-                f"steps={obs.step:2d}  parse={parse_successes}/{max(1, len(token_counts))}  "
-                f"burning={obs.burning_cells}"
-            )
-
-        results[task_id] = {
-            "scores": task_scores,
-            "episodes": task_episodes,
-            "mean": float(np.mean(task_scores)),
-            "std": float(np.std(task_scores)),
-            "min": float(np.min(task_scores)),
-            "max": float(np.max(task_scores)),
-        }
-        print(f"  {task_id}: mean={results[task_id]['mean']:.4f} ± {results[task_id]['std']:.4f}")
-
-    results["overall_mean"] = float(np.mean(all_scores))
+    results["overall_mean"] = float(np.mean(all_scores)) if all_scores else 0.0
     os.makedirs(os.path.dirname(output_json) or ".", exist_ok=True)
     with open(output_json, "w", encoding="utf-8") as fh:
         json.dump(results, fh, indent=2)
         fh.write("\n")
 
-    print(f"\nOverall HTTP mean grader score: {results['overall_mean']:.4f}")
+    print(f"\nOverall OpenEnv mean grader score: {results['overall_mean']:.4f}")
     print(f"Results saved -> {output_json}")
     return results
 
 
 def merge_result_files(paths: list[str], output_json: str) -> dict[str, Any]:
     merged: dict[str, Any] = {
-        "transport": "openenv_http",
+        "transport": "openenv_websocket",
         "merged_from": paths,
         "eval_tasks": {},
     }
@@ -426,11 +454,13 @@ def run_parallel_eval(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate wildfire policy through OpenEnv HTTP endpoints.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate the wildfire policy through the OpenEnv WebSocket API."
+    )
     parser.add_argument(
         "--base-url",
         default=os.getenv("OPENENV_BASE_URL", "http://127.0.0.1:8000"),
-        help="Base URL for the OpenEnv server.",
+        help="Base URL for the OpenEnv server (http:// is auto-converted to ws://).",
     )
     parser.add_argument("--adapter", default=None, help="Path to saved LoRA adapter directory.")
     parser.add_argument("--untrained", action="store_true", help="Evaluate base model without an adapter.")
@@ -457,14 +487,18 @@ def parse_args() -> argparse.Namespace:
         "--max-episode-steps",
         type=int,
         default=None,
-        help="Override episode step cap for evaluation.",
+        help=(
+            "OPTIONAL upper bound on per-episode policy calls. Defaults to the "
+            "env's own max_steps (20 for easy/medium, 25 for hard). Use this only "
+            "to time-box a smoke run; smaller values cut off delayed ignitions."
+        ),
     )
     parser.add_argument(
         "--output",
         default="submission_artifacts/eval_trained.json",
         help="Path for output JSON.",
     )
-    parser.add_argument("--timeout", type=float, default=120.0, help="HTTP timeout in seconds.")
+    parser.add_argument("--timeout", type=float, default=120.0, help="Per-message timeout in seconds.")
     return parser.parse_args()
 
 
@@ -487,8 +521,6 @@ if __name__ == "__main__":
     config = Config()
     if args.max_new_tokens is not None:
         config.max_new_tokens = args.max_new_tokens
-    if args.max_episode_steps is not None:
-        config.max_episode_steps = args.max_episode_steps
     eval_policy_http(
         base_url=args.base_url,
         adapter_path=selected_adapter,
@@ -496,4 +528,5 @@ if __name__ == "__main__":
         config=config,
         seeds_per_task=args.seeds_per_task,
         timeout=args.timeout,
+        max_episode_steps_override=args.max_episode_steps,
     )

@@ -47,9 +47,10 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - **Live app:** [chunchunmaru-101-wildfire-env.hf.space](https://chunchunmaru-101-wildfire-env.hf.space)
 - **Training pipeline:** [`train_grpo.py`](./train_grpo.py) (also runnable via [`notebooks/wildfire_training_eval_hf.ipynb`](./notebooks/wildfire_training_eval_hf.ipynb))
 - **Reward-hacking audit:** [`reward_audit.py`](./reward_audit.py) + [`reward_audit.json`](./reward_audit.json) (84 fixed-seed episodes, no exploit-like policies flagged)
-- **HTTP showcase eval:** [`eval_policy_http.py`](./eval_policy_http.py) drives both baseline and finetuned policies through `/reset`, `/step`, and `/grader` on the live OpenEnv Space
+- **OpenEnv showcase eval:** [`eval_policy_http.py`](./eval_policy_http.py) drives both baseline and finetuned policies over the official OpenEnv `EnvClient` WebSocket session (`reset`/`step` on `/ws`) plus the wildfire-specific `POST /grader` HTTP endpoint, against the live OpenEnv Space
 - **Submission artifact helpers:** [`plot_training_curves.py`](./plot_training_curves.py), [`submission_check.py`](./submission_check.py), and [`submission_artifacts/README.md`](./submission_artifacts/README.md)
-- **Writeup / demo video / slides:** [`ENV_REVIEW.md`](./ENV_REVIEW.md) (interim technical writeup; replace with final public blog/video/slides URL)
+- **Writeup:** [`Blog.MD`](./Blog.MD) is the separate judge-facing blog file requested for the Hugging Face Space
+- **Demo video:** add YouTube URL here if a video is created before submission
 - **Post-run outputs:** `grpo_wildfire/config.json`, `grpo_wildfire/task_catalog.json`, `grpo_wildfire/run_status.json`, `grpo_wildfire/checkpoint_index.json`, `grpo_wildfire/latest_metrics.json`, `grpo_wildfire/final_adapter/`
 - **Submission artifacts after a real GPU run:** [`submission_artifacts/training_reward_curve.png`](./submission_artifacts/training_reward_curve.png), [`submission_artifacts/training_loss_curve.png`](./submission_artifacts/training_loss_curve.png), [`submission_artifacts/eval_untrained.json`](./submission_artifacts/eval_untrained.json), and [`submission_artifacts/eval_trained.json`](./submission_artifacts/eval_trained.json)
 
@@ -59,7 +60,7 @@ This submission is a single-agent world-modeling environment with long-horizon p
 - FastAPI server exposing `/reset`, `/step`, `/state`, `/grader`, `/baseline`, `/tasks`, `/ws`, `/demo`
 - Deterministic heuristic baseline and deterministic grader for reproducible evaluation
 - Hand-rolled multi-turn GRPO training pipeline ([`train_grpo.py`](./train_grpo.py)) — Qwen3-4B-Instruct-2507 + 4-bit QLoRA (Unsloth) + XGrammar-constrained decoding
-- Single HTTP showcase evaluator ([`eval_policy_http.py`](./eval_policy_http.py)) for both untrained baseline and trained adapter runs against the deployed OpenEnv Space
+- Single OpenEnv showcase evaluator ([`eval_policy_http.py`](./eval_policy_http.py)) for both untrained baseline and trained adapter runs against the deployed OpenEnv Space, using the official `EnvClient` WebSocket session for stateful multi-turn rollouts
 - Run metadata + checkpoint index files so Hugging Face runs are restartable and auditable
 - GPU smoke test ([`smoke_test.py`](./smoke_test.py)) with NaN/Inf guards and preflight dependency checks
 - Reward-hacking audit harness ([`reward_audit.py`](./reward_audit.py)) running a 7-policy bank against the dense reward and grader, with rank-correlation reporting and exploit-like-policy flagging
@@ -279,7 +280,7 @@ python capture_replay.py --task hard --seed 9 --policy llm \
 
 # Heuristic baseline on the same seed (no GPU)
 python capture_replay.py --task hard --seed 9 --policy heuristic \
-    --output replays/heuristic_hard_9.json
+    --output replays/heuristic_hard_9_demo.json
 ```
 
 `GET /replays` returns an index of every JSON visible to the server under
@@ -305,9 +306,23 @@ plateaus on multi-front incidents (medium, hard) where the trained policy
 must pre-position units against the forecast and split coverage across
 priority structures.
 
-The HTTP showcase evaluation in `eval_policy_http.py` runs the same five seeds
-per task through `/reset`, `/step`, and `/grader`, so the trained-vs-baseline
-delta in `submission_artifacts/eval_*.json` is a clean held-out OpenEnv signal.
+The showcase evaluation in `eval_policy_http.py` runs the same five seeds per
+task through the official OpenEnv `EnvClient` WebSocket session (one persistent
+`/ws` connection drives `reset` then `step` per episode) plus the
+wildfire-specific `POST /grader` endpoint for the final score. Each episode
+runs to the env's own `max_steps` (20 for easy/medium, 25 for hard) so delayed
+ignitions actually have time to fire — no arbitrary truncation. The
+trained-vs-baseline delta in `submission_artifacts/eval_*.json` is therefore a
+clean held-out OpenEnv signal.
+
+> Why WebSocket and not raw `POST /reset` + `POST /step`? OpenEnv's HTTP
+> handlers (`HTTPEnvServer.register_routes` in `openenv-core`) construct a
+> fresh `Environment` instance per request and tear it down — they're
+> stateless by design and intended for one-shot sanity checks. Multi-turn
+> rollouts require the persistent session that `EnvClient` provides. We
+> discovered this the hard way mid-hackathon when our first eval pass
+> returned `obs.step == 1` after every `step` call regardless of how many
+> turns we ran; the official client fixed it immediately.
 
 ### Why a 16-seed training pool, not thousands
 
@@ -347,13 +362,6 @@ The honest tradeoff: a wider seed pool would generalize better *if* the
 compute existed to support it. Within a $30 hackathon budget, concentrating
 240 episodes on 16 representative scenarios produces a more reliable
 gradient than spreading them thin.
-
-LLM baseline script:
-
-- root script: `inference.py`
-- uses OpenAI client
-- reads `HF_TOKEN`, `API_BASE_URL`, and `MODEL_NAME`
-- runs explicit seeded task episodes for reproducibility
 
 ## Training
 
@@ -409,21 +417,22 @@ The repository is wired to generate these files after a real GPU run:
 
 Run `plot_training_curves.py` after training to materialize the plots and
 summary for the current HEAD, then run `eval_policy_http.py` for baseline and
-trained HTTP showcase scores.
+trained OpenEnv showcase scores. The evaluator opens one persistent
+WebSocket session per run; per-episode rollouts execute `reset` once then
+`step` until the env reports `done` or hits its own `max_steps`.
 
 ## Repository layout
 
-- `inference.py` — OpenAI-client baseline agent script
 - `Dockerfile` — Space container
 - `openenv.yaml` — OpenEnv manifest
 - `train_grpo.py` — multi-turn GRPO training pipeline
-- `eval_policy_http.py` — OpenEnv HTTP showcase evaluation for baseline and trained policies
+- `eval_policy_http.py` — OpenEnv showcase evaluation for baseline and trained policies (uses `EnvClient` WebSocket session, kept the legacy filename for backward compatibility)
 - `smoke_test.py` — 1-iter GRPO preflight
 - `reward_audit.py` — reward-hacking audit harness
 - `plot_training_curves.py` — SVG reward/loss plot generator for `log.jsonl`
 - `submission_check.py` — final packaging checker for hackathon submission
 - `submission_artifacts/` — generated training plots, eval JSONs, and final evidence
 - `notebooks/wildfire_training_eval_hf.ipynb` — Hugging Face GPU training
-- `notebooks/wildfire_http_eval_hf.ipynb` — HTTP baseline/trained evaluation and final artifacts
+- `notebooks/wildfire_http_eval_hf.ipynb` — OpenEnv baseline/trained evaluation and final artifacts
 - `wildfire_env/` — environment package (see `wildfire_env/README.md` for
   internals)

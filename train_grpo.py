@@ -218,8 +218,8 @@ def _write_checkpoint_index(
 
 
 # ---------------------------------------------------------------------------
-# System prompt (mirrors inference.py; redefined here to avoid that
-# module's HF_TOKEN check at import time)
+# System prompt shared conceptually with the HTTP evaluator; kept local so
+# training has no external API-token dependency.
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are an AI wildfire incident commander. Dispatch firefighting resources to contain fires and protect structures on a terrain grid (easy: 15×15, medium: 20×20, hard: 25×25).
