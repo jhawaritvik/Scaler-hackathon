@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Smoke test: try to make use_cache=True work with the LoRA-adapted Qwen3.
 
-Tests several inference paths against the live WildfireEnv on HF Space and
-reports parse rate + tokens-per-second for each. Goal: find a config that
-matches use_cache=False's parse rate while being substantially faster.
+Tests several inference paths and reports parse rate + tokens-per-second
+for each. Goal: find a config that matches use_cache=False's parse rate
+while being substantially faster.
+
+Hits the env once at the start to capture a real observation, then runs
+all inference configs offline against that captured obs — so it only
+holds the env's concurrency slot for ~1 second total.
 
 Run on the HF runtime (or any CUDA box with the trained adapter present):
 
-    python _tmp_cache_smoke.py --base-url https://chunchunmaru-101-wildfire-env.hf.space \
+    python _tmp_cache_smoke.py \
+        --base-url https://chunchunmaru-101-wildfire-env.hf.space \
         --adapter outputs/grpo_wildfire/final_adapter \
-        --task easy --seed 11 --num-prompts 5
+        --task easy --seed 11 --num-prompts 3
 
 Parse rate < num_prompts on a config => that config is broken; do not ship.
 """
